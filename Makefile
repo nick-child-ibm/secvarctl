@@ -5,7 +5,7 @@ CC = gcc
 _CFLAGS = -s -O2 -std=gnu99 -I./ -Iinclude/ -Wall -Werror
 LFLAGS = -lmbedtls -lmbedx509 -lmbedcrypto
 
-_DEPEN = secvarctl.h prlog.h err.h generic.h 
+_DEPEN = secvarctl.h prlog.h err.h generic.h libstb-secvar.h
 DEPDIR = include
 DEPEN = $(patsubst %,$(DEPDIR)/%, $(_DEPEN))
 

@@ -10,10 +10,8 @@
 #include <mbedtls/md.h>     /* generic interface */
 #include <mbedtls/platform.h> /*mbedtls functions*/
 #include "external/extraMbedtls/include/pkcs7.h" // for PKCS7 OID
-#include "external/skiboot/include/endian.h"
 #include "backends/edk2-compat/include/edk2-svc.h"
-#include "external/skiboot/include/edk2-compat-process.h" // work on factoring this out
-
+#include "libstb-secvar.h"
 
 struct Arguments {
     //the alreadySignedFlag is to determine if signKeys stores a private key file(0) or signed data (1)
@@ -833,7 +831,7 @@ static char *char_to_wchar(const char *key, const size_t keylen)
 	int i;
 	char *str;
 
-	str = zalloc(keylen * 2);
+	str = calloc(keylen, 2);
 	if (!str)
 		return NULL;
 

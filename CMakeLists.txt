@@ -5,7 +5,7 @@ project( secvarctl C )
 
 set( CMAKE_C_COMPILER gcc )
 #sources/dependencies for secvarctl
-set( DEPEN secvarctl.h prlog.h err.h generic.h )
+set( DEPEN secvarctl.h prlog.h err.h generic.h libstb-secvar.h )
 set( DEPDIR include/ )
 list( TRANSFORM DEPEN PREPEND ${DEPDIR} )
 set( SRC secvarctl.c generic.c )

@@ -29,6 +29,7 @@
 #include "external/skiboot/include/secvar.h"
 #include "external/skiboot/include/edk2.h"
 #include "endian.h"
+#include "libstb-secvar.h"
 
 #define __unused		__attribute__((unused)) //ADDED BY NICK CHILD
 
@@ -42,11 +43,12 @@
 #define CERT_BUFFER_SIZE        2048
 #define MBEDTLS_ERR_BUFFER_SIZE 1024	
 #define zalloc(...) calloc(1,__VA_ARGS__)
-
+/*
+NICK CHILD MOVED THE FOLLOWING INTO include/libstb-secvar.h
 #define EDK2_MAX_KEY_LEN        SECVAR_MAX_KEY_LEN
 #define key_equals(a,b) (!strncmp(a, b, EDK2_MAX_KEY_LEN))
 #define uuid_equals(a,b) (!memcmp(a, b, UUID_SIZE))
-
+*/
 extern bool setup_mode;
 extern struct list_head staging_bank;
 
