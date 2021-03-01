@@ -8,7 +8,7 @@
 #include <argp.h>
 #include "external/skiboot/include/opal-api.h"
 #include "external/skiboot/include/secvar.h"
-#include "backends/edk2-compat/include/edk2-svc.h"
+#include "backends/powernv/include/edk2-svc.h"
 
 
 

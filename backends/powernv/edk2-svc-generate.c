@@ -10,8 +10,9 @@
 #include <mbedtls/md.h>     /* generic interface */
 #include <mbedtls/platform.h> /*mbedtls functions*/
 #include "external/extraMbedtls/include/pkcs7.h" // for PKCS7 OID
-#include "backends/edk2-compat/include/edk2-svc.h"
 #include "libstb-secvar.h"
+#include "backends/powernv/include/edk2-svc.h"
+
 
 struct Arguments {
     //the alreadySignedFlag is to determine if signKeys stores a private key file(0) or signed data (1)
