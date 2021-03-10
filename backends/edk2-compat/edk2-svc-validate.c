@@ -48,7 +48,7 @@ int performValidation(int argc, char* argv[])
 	argc += 2;
 	argv -= 2;
 	//we could iterate to just the subcommand but then the usage would look a bit strange
-	//argp will only allow one string in argv as the program name, we want it to be 'secvarctl write' 
+	//argp will only allow one string in argv as the program name, we want it to be 'secvarctl validate' 
 	programName = malloc(strlen(argv[0]) + strlen(argv[1]) + strlen(" ") + 1);
 	if (!programName) { 
 		prlog(PR_ERR, "ERROR: failed to allocate memory\n");
