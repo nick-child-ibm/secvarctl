@@ -51,6 +51,10 @@ int performReadCommand(int argc, char* argv[])
 	//we could iterate to just the subcommand but then the usage would look a bit strange
 	//argp will only allow one string in argv as the program name, we want it to be 'secvarctl read' 
 	programName = malloc(strlen(argv[0]) + strlen(argv[1]) + strlen(" ") + 1);
+	if (!programName) { 
+		prlog(PR_ERR, "ERROR: failed to allocate memory\n");
+		return ALLOC_FAIL;
+	}
 	programName = strcpy(programName, argv[0]);
 	programName = strcat(programName, " ");
 	programName = strcat(programName, argv[1]);
