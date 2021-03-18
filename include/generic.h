@@ -6,6 +6,7 @@
 struct command {
 	char name[32];
 	int (*func)(int, char**);
+    char *short_desc;
 };
 
 char * getDataFromFile(const char *file, size_t* size);

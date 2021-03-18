@@ -13,62 +13,47 @@ static struct backend backends [] = {
 	{ .name = "ibm,edk2-compat-v1", .countCmds = sizeof(edk2_compat_command_table) / sizeof(struct command), .commands = edk2_compat_command_table },
 };
 
-void usage() 
+void printCommandOptions(size_t countCmds, struct command *commands) 
+{
+	for (size_t i = 0; i < countCmds; i++) {
+		printf("\t%-12s %-12s\n", commands[i].name,  commands[i].short_desc );
+	}
+}
+
+void usage(struct backend *backend) 
 {
 	printf("USAGE: \n\t$ secvarctl [COMMAND]\n"
+		"A command line tool for simplifying the reading and writing of secure boot variables.\n"
 		"COMMANDs:\n"
-		"\t--help/--usage\n\t"
-		"read\t\tprints info on secure variables,\n\t\t\t"
-		"use 'secvarctl read --usage/help' for more information\n\t"
-		"write\t\tupdates secure variable with new auth,\n\t\t\t"
-		"use 'secvarctl write --usage/help' for more information"
-		"\n\tvalidate\tvalidates format of given esl/cert/auth,\n\t\t\t"
-		"use 'secvarctl validate --usage/help' for more information\n\t"
-		"verify\t\tcompares proposed variable to the current variables,\n\t\t\t"
-		"use 'secvarctl verify --usage/help' for more information\n"
-#ifndef NO_CRYPTO
-		"\tgenerate\tcreates relevant files for secure variable management,\n\t\t\t"
-		"use 'secvarctl generate --usage/help' for more information\n"
-#endif
-		);
-}
-void help()
-{
-	printf("HELP:\n\t"
-	   "A command line tool for simplifying the reading and writing of secure boot variables.\n\t"
-       "Commands are:\n\t\t"
-       "read - print out information on their current secure vaiables\n\t\t"
-       "write - update the given variable's key value, committed upon reboot\n\t\t"
-       "validate  -  checks format requirements are met for the given file type\n\t\t"
-       "verify - checks that the given files are correctly signed by the current variables\n"
-#ifndef NO_CRYPTO
-       "\t\tgenerate - create files that are relevant to the secure variable management process\n"
-#endif
-       );
-	usage();
+		"\t--help/--usage\n");
+		printCommandOptions(backend->countCmds, backend->commands);
+	
 
 }
+
+	
 
  
 int main(int argc, char *argv[])
 {
 	int rc, i;
 	char *subcommand = NULL;
-	struct backend *backend = NULL;
+	//set default backend to powernv so usage/help work
+	struct backend *backend = &backends[0];
 	
 	if (argc < 2) {
-		usage();
+		usage(backend);
 		return ARG_PARSE_FAIL;
 	}
 	argv++;
 	argc--;
 	for (; argc > 0 && *argv[0] == '-'; argc--, argv++) {
 		if (!strcmp(*argv, "--usage")) {
-			usage();
+			usage(backend);
 			return SUCCESS;
 		}
 		else if (!strcmp(*argv, "--help")) {
-			help();
+			usage(backend);
 			return SUCCESS;
 		}
 		if (!strcmp(*argv, "-v")) {
@@ -80,13 +65,12 @@ int main(int argc, char *argv[])
 		return ARG_PARSE_FAIL;
 	} 
 
-	// if backend is not edk2-compat print continuing despite some funtionality not working 
+	// if backend is not power print continuing despite some funtionality not working 
 	backend = getBackend();
 	if (!backend) { 
-		prlog(PR_WARNING, "WARNING: Unsupported backend detected, assuming ibm,edk2-compat-v1 backend\nRead/write may not work as expected\n");
+		prlog(PR_WARNING, "WARNING: Unsupported backend detected, assuming ibm,edk2-compat-v1 backend\nRead/write may not work as expected\n for EFI Secure Boot\n");
 		backend = &backends[0];
 	}
-
 	// next command should be one of main subcommands
 	subcommand = *argv; 
 	argv++;
@@ -101,7 +85,7 @@ int main(int argc, char *argv[])
 	}
 	if (rc == UNKNOWN_COMMAND) {
 		prlog(PR_ERR, "ERROR:Unknown command %s\n", subcommand);
-		usage();
+		usage(backend);
 	}
 	
 	return rc;

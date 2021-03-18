@@ -656,13 +656,23 @@ static int getSizeFromSizeFile(size_t *returnSize, const char* path)
 	return rc;
 }
 
-
-struct command edk2_compat_command_table[] = {
-	{ .name = "read", .func = performReadCommand },
-	{ .name = "write", .func = performWriteCommand },
-	{ .name = "validate", .func = performValidation },
-	{ .name = "verify", .func = performVerificationCommand },
+/*"read\t\tprints info on secure variables,\n\t\t\t"
+		"use 'secvarctl read --usage/help' for more information\n\t"
+		"write\t\tupdates secure variable with new auth,\n\t\t\t"
+		"use 'secvarctl write --usage/help' for more information"
+		"\n\tvalidate\tvalidates format of given esl/cert/auth,\n\t\t\t"
+		"use 'secvarctl validate --usage/help' for more information\n\t"
+		"verify\t\tcompares proposed variable to the current variables,\n\t\t\t"
+		"use 'secvarctl verify --usage/help' for more information\n"
 #ifndef NO_CRYPTO
-	{ .name = "generate", .func = performGenerateCommand }
+		"\tgenerate\tcreates relevant files for secure variable management,\n\t\t\t"
+		"use 'secvarctl generate --usage/help' for more information\n"*/
+struct command edk2_compat_command_table[] = {
+	{ .name = "read", .func = performReadCommand, .short_desc = "prints info on secure variables" },
+	{ .name = "write", .func = performWriteCommand, .short_desc =  "updates secure variable with new auth"},
+	{ .name = "validate", .func = performValidation, .short_desc = "validates format of given esl/cert/auth" },
+	{ .name = "verify", .func = performVerificationCommand, .short_desc = "compares proposed variable to the current variables" },
+#ifndef NO_CRYPTO
+	{ .name = "generate", .func = performGenerateCommand, .short_desc = "creates relevant files for secure variable management" }
 #endif
 };

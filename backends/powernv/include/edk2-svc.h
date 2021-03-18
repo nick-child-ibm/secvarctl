@@ -64,5 +64,10 @@ int validatePKCS7(const unsigned char *cert_data, size_t len);
 int validateTS(const unsigned char *data, size_t size);
 int validateTime(struct efi_time *time);
 
+#ifdef NO_CRYPTO
+extern struct command edk2_compat_command_table[4];
+#else
 extern struct command edk2_compat_command_table[5];
+#endif
+
 #endif
