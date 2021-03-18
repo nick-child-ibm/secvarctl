@@ -15,6 +15,7 @@ enum errors{
 	INVALID_TIMESTAMP = -9,
 	HASH_FAIL = -10,
 	ALLOC_FAIL = -11,
-	UNKNOWN_COMMAND = -12
+	UNKNOWN_COMMAND = -12,
+	BACKEND_ID_FAIL = -13,
 };
 #endif

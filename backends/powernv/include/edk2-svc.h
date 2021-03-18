@@ -14,8 +14,8 @@
 
 #define CERT_BUFFER_SIZE        2048
 
-#ifndef SECVARPATH
-#define SECVARPATH "/sys/firmware/secvar/vars/"
+#ifndef POWERNV_SECVARPATH
+#define POWERNV_SECVARPATH "/sys/firmware/secvar/vars/"
 #endif
 
 #define variables  (char* []){ "PK", "KEK", "db", "dbx", "TS" }
@@ -69,5 +69,6 @@ extern struct command edk2_compat_command_table[4];
 #else
 extern struct command edk2_compat_command_table[5];
 #endif
+
 
 #endif

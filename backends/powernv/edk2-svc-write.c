@@ -56,7 +56,7 @@ int performWriteCommand(int argc, char* argv[])
 	{
 		{"verbose", 'v', 0, 0, "print more verbose process information"},
 		{"force", 'f', 0, 0, "force update, skips validation of file"},
-		{"path_to_vars", 'p', "PATH" ,0, "looks for .../<var>/update file in PATH, default is " SECVARPATH},
+		{"path_to_vars", 'p', "PATH" ,0, "looks for .../<var>/update file in PATH, default is " POWERNV_SECVARPATH},
 		{0}
 	};
 
@@ -183,7 +183,7 @@ static int updateSecVar(const char *varName, const char *authFile, const char *p
 	size_t size;
 		
 	if (!path) {
-		path = SECVARPATH;
+		path = POWERNV_SECVARPATH;
 	} 
 
 	// get data to write, if force flag then validate the data is an auth file

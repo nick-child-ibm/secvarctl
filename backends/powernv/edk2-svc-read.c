@@ -68,7 +68,7 @@ int performReadCommand(int argc, char* argv[])
 		{"print_raw", 'r', 0, 0, "prints raw data, default is human readable information"},
 		{"verbose", 'v', 0, 0, "print more verbose process information"},
 		{"read_file", 'f', "FILE", 0, "navigates to ESL file from working directiory"},
-		{"path_to_vars", 'p', "PATH" ,0, "looks for key directories {'PK','KEK','db','dbx', 'TS'} in PATH, default is " SECVARPATH},
+		{"path_to_vars", 'p', "PATH" ,0, "looks for key directories {'PK','KEK','db','dbx', 'TS'} in PATH, default is " POWERNV_SECVARPATH},
 		{0}
 	};
 
@@ -152,7 +152,7 @@ static int parse_opt(int key, char *arg, struct argp_state *state)
  *@param var  string to variable wanted if <variable> option is given, NULL if not
  *@param file string to filename with path if -f option, NULL if not
  *@param hrFLag 1 if -hr for human readable output, 0 for raw data
- *@param path string to path where {PK,KEK,db,dbx,TS} subdirectories are, default SECVARPATH if none given
+ *@param path string to path where {PK,KEK,db,dbx,TS} subdirectories are, default POWERNV_SECVARPATH if none given
  *@return succcess if at least one file was successfully read
  */
 static int readFiles(const char* var, const char* file, int hrFlag, const char *path) 
@@ -161,11 +161,11 @@ static int readFiles(const char* var, const char* file, int hrFlag, const char *
 	int rc, successCount = 0;
 
 	if (file) prlog(PR_NOTICE, "Looking in file %s for ESL's\n", file); 
-	else prlog(PR_NOTICE, "Looking in %s for %s variable with %s format\n", path ? path : SECVARPATH, var ? var : "ALL", hrFlag ? "ASCII" : "raw_data");
+	else prlog(PR_NOTICE, "Looking in %s for %s variable with %s format\n", path ? path : POWERNV_SECVARPATH, var ? var : "ALL", hrFlag ? "ASCII" : "raw_data");
 	
 	// set default path if no path chosen
 	if (!path) { 
-		path = SECVARPATH;
+		path = POWERNV_SECVARPATH;
 	}
 
 	if (!file) {
@@ -382,7 +382,7 @@ void usage()
 		"\n\t-r\t\t\tprints raw data, default is human readable information"
 		"\n\t-f <filename>\t\tnavigates to ESL file from working directiory"
 		"\n\t-p <path to vars>\tlooks for key directories {'PK','KEK','db','dbx', 'TS'} in <path>,\n"
-		"\t\t\t\tdefault is " SECVARPATH "\n"
+		"\t\t\t\tdefault is " POWERNV_SECVARPATH "\n"
 		"VARIABLES:\n\t{'PK','KEK','db','dbx', 'TS'}\ttype one of the following to get info on that key,\n"
 		"\t\t\t\t\tNOTE does not work when -f option is present\n\n");
 }*/
@@ -655,24 +655,3 @@ static int getSizeFromSizeFile(size_t *returnSize, const char* path)
 
 	return rc;
 }
-
-/*"read\t\tprints info on secure variables,\n\t\t\t"
-		"use 'secvarctl read --usage/help' for more information\n\t"
-		"write\t\tupdates secure variable with new auth,\n\t\t\t"
-		"use 'secvarctl write --usage/help' for more information"
-		"\n\tvalidate\tvalidates format of given esl/cert/auth,\n\t\t\t"
-		"use 'secvarctl validate --usage/help' for more information\n\t"
-		"verify\t\tcompares proposed variable to the current variables,\n\t\t\t"
-		"use 'secvarctl verify --usage/help' for more information\n"
-#ifndef NO_CRYPTO
-		"\tgenerate\tcreates relevant files for secure variable management,\n\t\t\t"
-		"use 'secvarctl generate --usage/help' for more information\n"*/
-struct command edk2_compat_command_table[] = {
-	{ .name = "read", .func = performReadCommand, .short_desc = "prints info on secure variables" },
-	{ .name = "write", .func = performWriteCommand, .short_desc =  "updates secure variable with new auth"},
-	{ .name = "validate", .func = performValidation, .short_desc = "validates format of given esl/cert/auth" },
-	{ .name = "verify", .func = performVerificationCommand, .short_desc = "compares proposed variable to the current variables" },
-#ifndef NO_CRYPTO
-	{ .name = "generate", .func = performGenerateCommand, .short_desc = "creates relevant files for secure variable management" }
-#endif
-};

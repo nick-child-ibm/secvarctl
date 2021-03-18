@@ -6,12 +6,8 @@
 #include "err.h"
 #include "prlog.h"
 #include "backends/powernv/include/edk2-svc.h"
+#include "backends/efivarfs/include/efivarfs.h"
 
-
-enum backends {
-	UNKNOWN_BACKEND = 0,
-	EDK2_COMPAT
-};
 
 struct backend {
 	char name[32];

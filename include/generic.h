@@ -2,7 +2,7 @@
 /* Copyright 2021 IBM Corp.*/
 #ifndef GENERIC_H
 #define GENERIC_H
-
+#include <stdlib.h>
 struct command {
 	char name[32];
 	int (*func)(int, char**);

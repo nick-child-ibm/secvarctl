@@ -26,11 +26,21 @@ list( APPEND SRC ${SECVARSRC} )
 set( POWERNVDEPEN edk2-svc.h )
 set( POWERNVDEPDIR backends/powernv/include/ )
 list( TRANSFORM POWERNVDEPEN PREPEND ${POWERNVDEPDIR} )
-set ( POWERNVSRC edk2-svc-read.c edk2-svc-write.c edk2-svc-verify.c )
+set ( POWERNVSRC edk2-svc-read.c edk2-svc-write.c edk2-svc-verify.c powernv.c )
 set ( POWERNVSRCDIR backends/powernv/ )
 list( TRANSFORM POWERNVSRC PREPEND ${POWERNVSRCDIR} )
 list( APPEND DEPEN ${POWERNVDEPEN} )
 list( APPEND SRC ${POWERNVSRC} )
+
+#sources/dependencies for efivarfs backend
+set( EVFSDEPEN efivarfs.h )
+set( EVFSDEPDIR backends/efivarfs/include/ )
+list( TRANSFORM EVFSDEPEN PREPEND ${EVFSDEPDIR} )
+set ( EVFSSRC efivarfs.c )
+set ( EVFSSRCDIR backends/efivarfs/ )
+list( TRANSFORM EVFSSRC PREPEND ${EVFSSRCDIR} )
+list( APPEND DEPEN ${EVFSDEPEN} )
+list( APPEND SRC ${EVFSSRC} )
 
 #sources/dependencies for borrowed skiboot code
 set( SKIBOOTDEPEN list.h config.h container_of.h check_type.h secvar.h opal-api.h endian.h short_types.h edk2.h edk2-compat-process.h )

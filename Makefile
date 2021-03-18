@@ -15,8 +15,17 @@ POWERNV_DEPEN = $(patsubst %,$(POWERNVDEPDIR)/%, $(_POWERNV_DEPEN))
 DEPEN += $(POWERNV_DEPEN)
 
 POWERNVOBJDIR = backends/powernv
-_POWERNV_OBJ =  edk2-svc-read.o edk2-svc-write.o edk2-svc-verify.o
+_POWERNV_OBJ =  edk2-svc-read.o edk2-svc-write.o edk2-svc-verify.o powernv.o
 POWERNV_OBJ = $(patsubst %,$(POWERNVOBJDIR)/%, $(_POWERNV_OBJ))
+
+_EVFS_DEPEN = efivarfs.h 
+EVFSDEPDIR = backends/efivarfs/include
+EVFS_DEPEN = $(patsubst %,$(EVFSDEPDIR)/%, $(_EVFS_DEPEN))
+DEPEN += $(EVFS_DEPEN)
+
+EVFSOBJDIR = backends/efivarfs
+_EVFS_OBJ =  efivarfs.o
+EVFS_OBJ = $(patsubst %,$(EVFSOBJDIR)/%, $(_EVFS_OBJ))
 
 _SECVAR_DEPEN = edk2-svc.h 
 SECVARDEPDIR = backends/powernv/include
@@ -46,7 +55,7 @@ _EXTRAMBEDTLS = generate-pkcs7.o pkcs7.o
 EXTRAMBEDTLS = $(patsubst %,$(EXTRAMBEDTLSDIR)/%, $(_EXTRAMBEDTLS))
 
 OBJ =secvarctl.o  generic.o 
-OBJ +=$(SKIBOOT_OBJ) $(EXTRAMBEDTLS) $(POWERNV_OBJ) $(SECVAR_OBJ)
+OBJ +=$(SKIBOOT_OBJ) $(EXTRAMBEDTLS) $(POWERNV_OBJ) $(EVFS_OBJ) $(SECVAR_OBJ)
 
 OBJCOV = $(patsubst %.o, %.cov.o,$(OBJ))
 

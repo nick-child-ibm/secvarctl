@@ -65,7 +65,7 @@ int performVerificationCommand(int argc, char* argv[])
 	struct argp_option options[] = 
 	{
 		{"verbose", 'v', 0, 0, "print more verbose process information"},
-		{"path_to_vars", 'p', "PATH" ,0, "manually set path to current variables, looks for .../<var>/data file in PATH, default is " SECVARPATH " . Cannot be used with `-c` "},
+		{"path_to_vars", 'p', "PATH" ,0, "manually set path to current variables, looks for .../<var>/data file in PATH, default is " POWERNV_SECVARPATH " . Cannot be used with `-c` "},
 		{"current_sec_vars", 'c', "{CURRENT VAR LIST}", 0, "manually set current vars to be contents of CURRENT VAR LIST (see below for format)"},
 		{"write", 'w', 0, 0, "if successful, submit the update to be commited upon reboot. Equivalent to `secvarctl write`"},
 		{0, 'u', "{UPDATE LIST}", OPTION_HIDDEN, "set update variables (see below for format)"},
@@ -240,7 +240,7 @@ static int verify(char * currentVars[], int currCount, const char *updateVars[],
 	list_head_init(&update_bank_copy);
 	// set default path if no path chosen
 	if (!path) { 
-		path = SECVARPATH;
+		path = POWERNV_SECVARPATH;
 	}
 	rc = setupBanks(&variable_bank,&update_bank,currentVars,currCount,updateVars,updateCount,path);
 	if(rc){

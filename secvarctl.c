@@ -2,31 +2,43 @@
 /* Copyright 2021 IBM Corp.*/
 #include <stdio.h>
 #include <string.h>
+#include <sys/stat.h> // needed for stat struct for file info
 #include <stdlib.h>
 #include "prlog.h"
 #include "secvarctl.h"
 
 int verbose = PR_WARNING;
-static struct backend *getBackend();
+static struct backend *getDesiredBackend(int backendDesired);
 
+//array of currently supported backends and their commands
 static struct backend backends [] = {
 	{ .name = "ibm,edk2-compat-v1", .countCmds = sizeof(edk2_compat_command_table) / sizeof(struct command), .commands = edk2_compat_command_table },
+	{ .name = "efi_vars", .countCmds = sizeof(efi_var_command_table) / sizeof(struct command), .commands = efi_var_command_table }
+};
+//enum corresponding to index of respective backend from backends[]
+enum backendsIndex {
+	POWERNV_BACKEND = 0,
+	EFI_BACKEND,
+	UNKNOWN_BACKEND 
 };
 
 void printCommandOptions(size_t countCmds, struct command *commands) 
 {
 	for (size_t i = 0; i < countCmds; i++) {
-		printf("\t%-12s %-12s\n", commands[i].name,  commands[i].short_desc );
+		printf("\t%-12s%s\n\t\tuse 'secvarctl %s --usage/help' for more information\n", commands[i].name, commands[i].short_desc, commands[i].name );
 	}
 }
 
-void usage(struct backend *backend) 
+void usage(int backend) 
 {
-	printf("USAGE: \n\t$ secvarctl [COMMAND]\n"
+	backend = backend >= UNKNOWN_BACKEND ? POWERNV_BACKEND : backend;
+	printf("USAGE: \n\t\tsecvarctl [COMMAND]\n\tor:\tsecvarctl --efivars [COMMAND]\n"
 		"A command line tool for simplifying the reading and writing of secure boot variables.\n"
+		"\t--efivars\tEXPERIMENTAL: assumes x86 EFI secure boot backend, default POWER Secure Boot\n"
 		"COMMANDs:\n"
-		"\t--help/--usage\n");
-		printCommandOptions(backend->countCmds, backend->commands);
+		"\t--help/--usage\n"
+		);
+		printCommandOptions(backends[backend].countCmds, backends[backend].commands);
 	
 
 }
@@ -38,37 +50,41 @@ int main(int argc, char *argv[])
 {
 	int rc, i;
 	char *subcommand = NULL;
-	//set default backend to powernv so usage/help work
-	struct backend *backend = &backends[0];
+	struct backend *backend = NULL;
+	int backendDesired = UNKNOWN_BACKEND;
 	
 	if (argc < 2) {
-		usage(backend);
+		usage(backendDesired);
 		return ARG_PARSE_FAIL;
 	}
 	argv++;
 	argc--;
 	for (; argc > 0 && *argv[0] == '-'; argc--, argv++) {
 		if (!strcmp(*argv, "--usage")) {
-			usage(backend);
+			usage(backendDesired);
 			return SUCCESS;
 		}
 		else if (!strcmp(*argv, "--help")) {
-			usage(backend);
+			usage(backendDesired);
 			return SUCCESS;
 		}
 		if (!strcmp(*argv, "-v")) {
 			verbose = PR_DEBUG;
 		}
+		if (!strcmp(*argv, "--efivars")) {
+			backendDesired = EFI_BACKEND;
+		}
 	}
 	if (argc <= 0) {
 		prlog(PR_ERR,"ERROR: No command found\n");
+		usage(backendDesired);
 		return ARG_PARSE_FAIL;
 	} 
 
 	// if backend is not power print continuing despite some funtionality not working 
-	backend = getBackend();
+	backend = getDesiredBackend(backendDesired);
 	if (!backend) { 
-		prlog(PR_WARNING, "WARNING: Unsupported backend detected, assuming ibm,edk2-compat-v1 backend\nRead/write may not work as expected\n for EFI Secure Boot\n");
+		prlog(PR_WARNING, "WARNING: Unsupported backend detected, assuming ibm,edk2-compat-v1 backend\nRead/write may not work as expected\n\n");
 		backend = &backends[0];
 	}
 	// next command should be one of main subcommands
@@ -85,21 +101,18 @@ int main(int argc, char *argv[])
 	}
 	if (rc == UNKNOWN_COMMAND) {
 		prlog(PR_ERR, "ERROR:Unknown command %s\n", subcommand);
-		usage(backend);
+		usage(backendDesired);
 	}
 	
 	return rc;
 }
 
-/*
- *Checks what backend the platform is running, CURRENTLY ONLY KNOWS EDK2
- *@return type of backend, or NULL if file could not be found or contained wrong contents,
- */
-static struct backend *getBackend()
+//check if POWER machine has host secure boot enabled 
+static int isPOWERNVBackend()
 {
 	char *buff = NULL, *secVarFormatLocation = "/sys/firmware/secvar/format";
 	size_t buffSize;
-	struct backend *result = NULL;
+	int rc = BACKEND_ID_FAIL;
 	// if file doesnt exist then print warning and keep going
 	if (isFile(secVarFormatLocation)) {
 		prlog(PR_WARNING, "WARNING!! Platform does not support secure variables\n");
@@ -110,21 +123,52 @@ static struct backend *getBackend()
 		prlog(PR_WARNING, "WARNING!! Could not extract data from %s , assuming platform does not support secure variables\n", secVarFormatLocation);
 		goto out;
 	}
-	//loop through all known backends
-	for (int i = 0; i < sizeof(backends) / sizeof(struct backend); i++) {
-		if (!strncmp(buff, backends[i].name, strlen(backends[i].name))) {
-			prlog(PR_NOTICE, "Found Backend %s\n", backends[i].name);
-			result = &backends[i];
-			goto out;
-		}
+	if (!strncmp(buff, backends[POWERNV_BACKEND].name, strlen(backends[POWERNV_BACKEND].name))) {
+		prlog(PR_NOTICE, "Found Backend %s\n", backends[POWERNV_BACKEND].name);
+		rc = SUCCESS;
+		goto out;
 	}
-	prlog(PR_WARNING, "WARNING!! %s  does not contain known backend format.\n", secVarFormatLocation);
+	
+	prlog(PR_WARNING, "WARNING!! %s  does not contain known POWER backend format.\n", secVarFormatLocation);
 
 out:
 	if (buff) 
 		free(buff);
 
-	return result;
+	return rc;
+}
 
+//check that x86 machine has EFI secure boot enables
+static int isEFIBackend() 
+{
+	int rc;
+	struct stat statbuf;
+	// a hack, efivarfs can be anywhere.
+	// test for dir, not PK, as PK could be absent.
+	rc = stat("/sys/firmware/efi/efivars/", &statbuf);
+
+	if (rc == 0 && (statbuf.st_mode & S_IFMT) == S_IFDIR) {
+		prlog(PR_NOTICE, "Found Backend %s\n", backends[EFI_BACKEND].name);
+		return SUCCESS;
+	}
+	return BACKEND_ID_FAIL;
+}
+
+/*
+ *Checks if the desired backend is what backend the platform is running
+ *@param backendDesired, value from enum backendsIndex, if UNKNOWN_BACKEND assumes POWERNV
+ *@return type of backend, or NULL if file could not be found or contained wrong contents,
+ */
+static struct backend *getDesiredBackend(int backendDesired)
+{
+	struct backend *result = NULL;
+	//if user desires efivarfs with --efivars then check that they have the necessary requirements
+	if (backendDesired == EFI_BACKEND && isEFIBackend() == SUCCESS)
+		result = &backends[EFI_BACKEND];
+	//else assume they want a POWER environment, only power envireonment at the moment is powernv
+	else if  (isPOWERNVBackend() == SUCCESS)
+		result = &backends[POWERNV_BACKEND];
+
+	return result;
 }
 
