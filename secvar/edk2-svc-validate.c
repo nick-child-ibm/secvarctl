@@ -581,46 +581,6 @@ out:
 }
 
 /**
- *parses x509 certficate buffer (PEM or DER) into certificate struct
- *@param x509, returned x509, expected to be allocated mbedtls_x509_crt struct,
- *@param certBuf pointer to certificate data
- *@param buflen length of certBuf
- *@return CERT_FAIL if certificate cant be parsed
- *@return SUCCESS if certificate is valid
- */
-int parseX509(mbedtls_x509_crt *x509, const unsigned char *certBuf, size_t buflen) 
-{
-	int failures;
-	unsigned char *generatedDER = NULL;
-	size_t generatedDERSize;
-	if ((ssize_t)buflen <= 0) {
-		prlog(PR_ERR, "ERROR: Certificate has invalid length %zd, cannot validate\n", buflen);
-		return CERT_FAIL;
-	}
-	mbedtls_x509_crt_init(x509);
-	// puts cert data into x509_Crt struct and returns number of failed parses
-	failures = mbedtls_x509_crt_parse(x509, certBuf, buflen); 
-	if (failures) {
-		prlog(PR_INFO, "Failed to parse cert as DER mbedtls err#%d, trying PEM...\n", failures);
-		// if failed, maybe input is PEM and so try converting PEM to DER, if conversion fails then we know it was DER and it failed
-		if (convert_pem_to_der(certBuf, buflen, &generatedDER, &generatedDERSize)) {
-			prlog(PR_ERR, "Parsing x509 as PEM format failed mbedtls err#%d \n", failures);
-			return CERT_FAIL;
-		}
-		// if success then try to parse into x509 struct again
-		failures = mbedtls_x509_crt_parse(x509, generatedDER, generatedDERSize); 
-		if (failures) {
-			prlog(PR_ERR, "Parsing x509 from PEM failed with MBEDTLS exit code: %d \n", failures);
-			return CERT_FAIL;
-		}
-	}
-	if (generatedDER) 
-		free(generatedDER);
-
-	return SUCCESS;
-}
-
-/**
  *determines if Timestamp variable is in the right format
  *@param data, timestamps of normal variables {pk, db, kek, dbx}
  *@param size, size of timestamp data, should be 16*4
@@ -632,8 +592,8 @@ int validateTS(const unsigned char *data, size_t size)
 	char *pointer;
 	struct efi_time *tmpStamp;
 	// data length must have a timestamp for every variable besides the TS variable
-	if (size != sizeof(struct efi_time) * (ARRAY_SIZE(variables) - 1)) {
-		prlog(PR_ERR,"ERROR: TS variable does not contain data on all the variables, expected %ld bytes of data, found %zd\n", sizeof(struct efi_time) * (ARRAY_SIZE(variables) - 1), size);
+	if (size != sizeof(struct efi_time) * (ARRAY_SIZE(POWERNV_VARIABLES) - 1)) {
+		prlog(PR_ERR,"ERROR: TS variable does not contain data on all the variables, expected %ld bytes of data, found %zd\n", sizeof(struct efi_time) * (ARRAY_SIZE(POWERNV_VARIABLES) - 1), size);
 		return INVALID_TIMESTAMP;
 	}
 	for (pointer = (char *)data; size > 0; pointer += sizeof(struct efi_time), size -= sizeof(struct efi_time)){
@@ -641,7 +601,7 @@ int validateTS(const unsigned char *data, size_t size)
 		rc = validateTime(tmpStamp);
 		if (rc) goto out;
 		if (verbose >= PR_INFO){
-			prlog(PR_INFO, "\t%s:\t", variables[(ARRAY_SIZE(variables) - 1) - (size / sizeof(struct efi_time))]);
+			prlog(PR_INFO, "\t%s:\t", POWERNV_VARIABLES[(ARRAY_SIZE(POWERNV_VARIABLES) - 1) - (size / sizeof(struct efi_time))]);
 		 printTimestamp(*tmpStamp);
 		}
 	}
@@ -689,11 +649,4 @@ int validateTime(struct efi_time *time)
 	}
 
 	return SUCCESS;	
-}
-
-void printTimestamp(struct efi_time t)
-{
-	// NOTE: if auth is made with sign-efi-sig-list, year will be actual year+1 (see https:// blog.hansenpartnership.com/updating-pk-kek-db-and-x-in-user-mode/), 
-	// also month could be one less bc months are 0-11 not 1-12
-	printf("%04d-%02d-%02d %02d:%02d:%02d\n", t.year,t.month,t.day, t.hour, t.minute, t.second); 
 }

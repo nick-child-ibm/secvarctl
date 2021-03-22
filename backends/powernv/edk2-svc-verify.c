@@ -23,7 +23,6 @@ extern struct secvar_backend_driver edk2_compatible_v1;
 
 static int verify(char **currentVars, int currCount, const char **updateVars, int updateCount, const char *path, int writeFlag);
 static int validateVarsArg(const char *vars[], int size);
-static int getCurrentVars(char **newCurr, int *size, const char *path);
 static char *opalErrToString(int rc);
 static int parse_opt(int key, char *arg, struct argp_state *state);
 static int validateBanks(struct list_head *update_bank, struct list_head *variable_bank);
@@ -242,12 +241,12 @@ static int verify(char * currentVars[], int currCount, const char *updateVars[],
 	if (!path) { 
 		path = POWERNV_SECVARPATH;
 	}
-	rc = setupBanks(&variable_bank,&update_bank,currentVars,currCount,updateVars,updateCount,path);
+	rc = setupBanks(&variable_bank,&update_bank, currentVars,currCount, updateVars, updateCount, path);
 	if(rc){
 		prlog(PR_ERR, "ERROR:Could not initialize banks\n");
 		goto out;
 	}
-	rc = validateBanks(&update_bank,&variable_bank);
+	rc = validateBanks(&update_bank, &variable_bank);
 	if(rc){
 		prlog(PR_ERR,"ERROR:Could not validate data in banks\n");
 		goto out;
@@ -255,7 +254,7 @@ static int verify(char * currentVars[], int currCount, const char *updateVars[],
 	// run preprocess
 	rc = edk2_compatible_v1.pre_process(&variable_bank, &update_bank);
 	if (rc) {
-		prlog(PR_ERR,"ERROR: Failed in preprocessing OPAL ERR = %d = %s\n",rc, opalErrToString(rc));
+		prlog(PR_ERR,"ERROR: Failed in preprocessing OPAL ERR = %d = %s\n", rc, opalErrToString(rc));
 		goto out;
 	}
 	if (verbose >= PR_INFO) {
@@ -312,13 +311,8 @@ static int setupBanks(struct list_head *variable_bank, struct list_head *update_
 	// if current vars string is given, check it. if not, get default/path vars
 	if (!currentVars) { 
 		defaultVarsFlag = 1;
-		// max length of this array is #OfVars *2 b/c max contents= {Pk, path/pk/data, KEK, path/kek/data,etc}
-		currentVars = calloc(1, sizeof(char*) * ARRAY_SIZE(variables) * 2);
-		if (!currentVars) {
-			prlog(PR_ERR, "ERROR: failed to allocate memory\n");
-			return ALLOC_FAIL;
-		}
-		getCurrentVars(currentVars, &currCount, path);	
+		currentVars = (char **) current_backend->sb_variables;
+		currCount = current_backend->sb_variables_count;
 	}
 
 	// once here, strings should be ready, it is time to fill banks
@@ -333,30 +327,26 @@ static int setupBanks(struct list_head *variable_bank, struct list_head *update_
 			prlog(PR_INFO, "Failed to open %s, not adding it to list\n", updateVars[i + 1]);
 	}
 	// fill variable bank with current vars
-	for(int i = 0; i < currCount; i += 2){
+	for(int i = 0; i < currCount; i ++){
 		if (defaultVarsFlag) {
 			// if getting secvar successful add tmp to list
-			if (!getSecVar(&tmp, currentVars[i], currentVars[i + 1])) 
-				list_add_tail(variable_bank,&tmp->link);
+			if (!getSecVar(&tmp, currentVars[i], path)) 
+				list_add_tail(variable_bank, &tmp->link);
 			
 		}
 		else {
 			c = getDataFromFile( (char *)currentVars[i + 1], &len);
 			if (c) {
-				list_add_tail(variable_bank, &new_secvar(currentVars[i], strlen(currentVars[i]) + 1, c, len, 0)->link);
+				list_add_tail(variable_bank, &new_secvar(currentVars[i], strlen(currentVars[i + 1]), c, len, 0)->link);
 				free(c);
 			}
 			else 
 				prlog(PR_INFO, "Failed to open %s, not adding it to list\n", currentVars[i + 1]);
+			//iterate i once since format of current vars is <var> <path> ... instead of just <var1> <var2>...
+			i++;
 		}
 	}
-	// cleanup because of dynamically allocated memory of default paths, need to cleanup pointer to array and pointer to strings
-	if (defaultVarsFlag) {	
-		for( int i = 0; i < currCount; i++)
-			free(currentVars[i]);
-		free(currentVars);
-		currentVars = NULL;
-	}
+	
 
 	return SUCCESS;
 }
@@ -455,56 +445,6 @@ static int validateVarsArg(const char *vars[], int size)
 	return SUCCESS;
 }
 
-
-/**
- *called if -c not used, tries to find the variables in the path/default path
- *@param newCurr , empty array of strings to be filled
- *@param size , pointer to integer to be filled with length of newCurr
- *@param path , path to the location of the subdirectories {"PK", "KEK", "db", "dbx", "TS"}
- *@return the return of the validation of newCurr, SUCCESS if everything is ordered and formated right
- */
-static int getCurrentVars(char *newCurr[], int *size, const char* path)
-{
-	int lenCtr = 0, i, offset = 0;
-	char *ext = "/data";
-	char *fullPath = NULL;
-	for (i = 0; i < ARRAY_SIZE(variables); i++) {
-		fullPath = malloc(strlen(path) + strlen(variables[i]) + strlen(ext) + 1);
-		if (!fullPath) { 
-			prlog(PR_ERR, "ERROR: failed to allocate memory\n");
-			return ALLOC_FAIL;
-		}
-		strcpy(fullPath, path);
-		offset += strlen(path);
-		strncpy(fullPath + offset, variables[i], strlen(variables[i]));
-		offset += strlen(variables[i]);
-		strncpy(fullPath + offset, ext, strlen(ext) + 1);
-		// if it is a file then add variable name and data file to newCurr
-		if (!isFile(fullPath)) {
-			newCurr[lenCtr] = malloc(strlen(variables[i]) + 1);
-			if (!newCurr[lenCtr]) {
-				prlog(PR_ERR, "ERROR: failed to allocate memory\n");
-				free(fullPath);
-				return ALLOC_FAIL;
-			}
-			strncpy(newCurr[lenCtr++], variables[i], strlen(variables[i]) + 1);
-			newCurr[lenCtr] = malloc(strlen(fullPath) + 1);
-			if (!newCurr[lenCtr]) {
-				prlog(PR_ERR, "ERROR: failed to allocate memory\n");
-				free(fullPath);
-				return ALLOC_FAIL;
-			}
-
-			strcpy(newCurr[lenCtr++],fullPath);
-		}
-		offset = 0;
-		free(fullPath);
-		fullPath = NULL;
-	}
-	*size = lenCtr;
-
-	return validateVarsArg((const char**)newCurr, *size);
-}
 
 /**
  *prints the name and size of each secvar in the banks

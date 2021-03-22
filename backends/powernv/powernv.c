@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+/* Copyright 2021 IBM Corp.*/
 #include "backends/powernv/include/edk2-svc.h"// include last, pragma pack(1) issue
 #include "generic.h"
 struct command edk2_compat_command_table[] = {

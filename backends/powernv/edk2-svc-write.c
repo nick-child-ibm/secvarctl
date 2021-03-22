@@ -7,7 +7,6 @@
 #include <string.h>
 #include <stdlib.h>// for exit
 #include <argp.h>
-#include "secvarctl.h"
 #include "backends/powernv/include/edk2-svc.h"// import last!!
 
 
@@ -153,20 +152,6 @@ static int parse_opt(int key, char *arg, struct argp_state *state)
 	return rc;
 }
 
-/**
- *checks to see if string is a valid variable name {db,dbx,pk,kek, TS}
- *@param var variable name
- *@return SUCCESS or error code
- */
-int isVariable(const char * var)
-{
-	for (int i = 0; i < ARRAY_SIZE(variables); i++) {
-		if (strcmp(var,variables[i]) == 0)
-			return SUCCESS;
-	}
-
-	return INVALID_VAR_NAME;
-}
 
 /**
  *ensures updating variable is a valid variable, creates full path to ...../update file, verifies auth file is valid

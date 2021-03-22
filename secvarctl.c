@@ -8,19 +8,8 @@
 #include "secvarctl.h"
 
 int verbose = PR_WARNING;
+struct backend* current_backend = NULL;
 static struct backend *getDesiredBackend(int backendDesired);
-
-//array of currently supported backends and their commands
-static struct backend backends [] = {
-	{ .name = "ibm,edk2-compat-v1", .countCmds = sizeof(edk2_compat_command_table) / sizeof(struct command), .commands = edk2_compat_command_table },
-	{ .name = "efi_vars", .countCmds = sizeof(efi_var_command_table) / sizeof(struct command), .commands = efi_var_command_table }
-};
-//enum corresponding to index of respective backend from backends[]
-enum backendsIndex {
-	POWERNV_BACKEND = 0,
-	EFI_BACKEND,
-	UNKNOWN_BACKEND 
-};
 
 void printCommandOptions(size_t countCmds, struct command *commands) 
 {
@@ -50,7 +39,6 @@ int main(int argc, char *argv[])
 {
 	int rc, i;
 	char *subcommand = NULL;
-	struct backend *backend = NULL;
 	int backendDesired = UNKNOWN_BACKEND;
 	
 	if (argc < 2) {
@@ -82,10 +70,10 @@ int main(int argc, char *argv[])
 	} 
 
 	// if backend is not power print continuing despite some funtionality not working 
-	backend = getDesiredBackend(backendDesired);
-	if (!backend) { 
-		prlog(PR_WARNING, "WARNING: Unsupported backend detected, assuming ibm,edk2-compat-v1 backend\nRead/write may not work as expected\n\n");
-		backend = &backends[0];
+	current_backend = getDesiredBackend(backendDesired);
+	if (!current_backend) { 
+		current_backend = &backends[POWERNV_BACKEND];
+		prlog(PR_WARNING, "WARNING: Unsupported backend detected, assuming %s backend\nRead/write may not work as expected\n\n", current_backend->name);
 	}
 	// next command should be one of main subcommands
 	subcommand = *argv; 
@@ -93,9 +81,9 @@ int main(int argc, char *argv[])
 	argc--;
 
 	rc = UNKNOWN_COMMAND;
-	for (i = 0; i < backend->countCmds; i++) {
-		if (!strncmp(subcommand, backend->commands[i].name, 32)) {
-			rc = backend->commands[i].func(argc, argv);
+	for (i = 0; i < current_backend->countCmds; i++) {
+		if (!strncmp(subcommand, current_backend->commands[i].name, 32)) {
+			rc = current_backend->commands[i].func(argc, argv);
 			break;
 		}
 	}

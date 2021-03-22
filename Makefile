@@ -15,7 +15,7 @@ POWERNV_DEPEN = $(patsubst %,$(POWERNVDEPDIR)/%, $(_POWERNV_DEPEN))
 DEPEN += $(POWERNV_DEPEN)
 
 POWERNVOBJDIR = backends/powernv
-_POWERNV_OBJ =  edk2-svc-read.o edk2-svc-write.o edk2-svc-verify.o powernv.o
+_POWERNV_OBJ = edk2-svc-write.o edk2-svc-verify.o powernv.o edk2-svc-read.o
 POWERNV_OBJ = $(patsubst %,$(POWERNVOBJDIR)/%, $(_POWERNV_OBJ))
 
 _EVFS_DEPEN = efivarfs.h 
@@ -24,16 +24,16 @@ EVFS_DEPEN = $(patsubst %,$(EVFSDEPDIR)/%, $(_EVFS_DEPEN))
 DEPEN += $(EVFS_DEPEN)
 
 EVFSOBJDIR = backends/efivarfs
-_EVFS_OBJ =  efivarfs.o
+_EVFS_OBJ =  efivarfs.o efivarfs-read.o
 EVFS_OBJ = $(patsubst %,$(EVFSOBJDIR)/%, $(_EVFS_OBJ))
 
-_SECVAR_DEPEN = edk2-svc.h 
-SECVARDEPDIR = backends/powernv/include
+_SECVAR_DEPEN = general_secvar_cmds.h 
+SECVARDEPDIR = secvar/include
 SECVAR_DEPEN = $(patsubst %,$(SECVARDEPDIR)/%, $(_SECVAR_DEPEN))
 DEPEN += $(SECVAR_DEPEN)
 
 SECVAROBJDIR = secvar
-_SECVAR_OBJ =  edk2-svc-validate.o edk2-svc-generate.o
+_SECVAR_OBJ =  edk2-svc-validate.o edk2-svc-generate.o general-read.o util.o
 SECVAR_OBJ = $(patsubst %,$(SECVAROBJDIR)/%, $(_SECVAR_OBJ))
 
 _SKIBOOT_DEPEN =list.h config.h container_of.h check_type.h secvar.h opal-api.h endian.h short_types.h edk2.h edk2-compat-process.h

@@ -1,0 +1,544 @@
+// SPDX-License-Identifier: Apache-2.0
+/* Copyright 2021 IBM Corp.*/
+#include <sys/stat.h> // needed for stat struct for file info
+#include <sys/types.h>
+#include <fcntl.h> // O_RDONLY
+#include <unistd.h> // has read/open funcitons
+#include <stdio.h>
+#include <errno.h>
+#include <string.h>
+#include <stdlib.h>
+#include <argp.h>
+#include <mbedtls/x509_crt.h> // for printCertInfo
+#include "external/skiboot/include/secvar.h" // for secvar struct
+#include "secvar/include/general_secvar_cmds.h"
+#include "external/skiboot/include/edk2.h" //include last or else problems from pragma pack(1)
+
+
+
+
+static int readFiles(const char* var, const char* file, int hrFlag, const  char* path);
+static int printReadable(const char *c , size_t size, const char * key);
+static int readFileFromSecVar(const char * path, const char *variable, int hrFlag);
+static int readFileFromPath(const char *path, int hrFlag);
+static int readTS(const char *data, size_t size);
+
+
+struct Arguments {
+	int helpFlag, printRaw;
+	const char *pathToSecVars, *varName, *inFile;
+}; 
+static int parse_opt(int key, char *arg, struct argp_state *state);
+
+
+/*
+ *called from main()
+ *handles argument parsing for read command
+ *@param argc, number of argument
+ *@param arv, array of params
+ *@return SUCCESS or err number 
+ */
+int performReadCommand(int argc, char* argv[]) 
+{
+	int rc;
+	char *programName = NULL, *pathFlagUsage = NULL,
+		*variableString = NULL,
+		*helpString = NULL,
+		*pathFormatString = "looks for key directories %s in PATH, default is %s",
+		*helpFormatString =
+			"This program command is created to easily view secure variables. The current variables" 
+			" that are able to be observed are the %s. If no options are" 
+			" given, then the information for the keys in the default path will be printed."
+			" If the user would like to print the information for another ESL file,"
+			" then the '-f' command would be appropriate."
+			"\vvalues for [VARIABLES] = {%s} type one of the following to get info on that key, default is all. NOTE does not work when -f option is present";
+	struct Arguments args = {	
+		.helpFlag = 0, .printRaw = 0, 
+		.pathToSecVars = NULL, .inFile = NULL, .varName = NULL
+	};
+
+	//go back two arguments to get program name and subcommand
+	argc += 2;
+	argv -= 2;
+	//we could iterate to just the subcommand but then the usage would look a bit strange
+	//argp will only allow one string in argv as the program name, we want it to be 'secvarctl read' 
+	programName = malloc(strlen(argv[0]) + strlen(argv[1]) + strlen(" ") + 1);
+	if (!programName) { 
+		prlog(PR_ERR, "ERROR: failed to allocate memory\n");
+		return ALLOC_FAIL;
+	}
+	programName = strcpy(programName, argv[0]);
+	programName = strcat(programName, " ");
+	programName = strcat(programName, argv[1]);
+	argc--;
+	argv++;
+	argv[0] = programName;
+
+	//create string for path to vars and string from vars array, since it varies on backends
+	rc = getVariableString(&variableString, current_backend->sb_variables_count);
+	if (rc) 
+		goto out;
+
+	pathFlagUsage = malloc(strlen(pathFormatString) + strlen(variableString) + strlen(current_backend->default_secvar_path));
+	rc = sprintf(pathFlagUsage, pathFormatString, variableString, current_backend->default_secvar_path);
+	if (rc < SUCCESS) {
+		prlog(PR_ERR, "ERROR: Failed to generate format strings for help/usage messages\n");
+		goto out;
+	}
+	helpString = malloc (strlen(helpFormatString) + (strlen(variableString) * 2 ));
+	rc = sprintf(helpString, helpFormatString, variableString, variableString);
+	if (rc < SUCCESS) {
+		prlog(PR_ERR, "ERROR: Failed to generate format strings for help/usage messages\n");
+		goto out;
+	}
+	struct argp_option options[] = 
+	{
+		{"print_raw", 'r', 0, 0, "prints raw data, default is human readable information"},
+		{"verbose", 'v', 0, 0, "print more verbose process information"},
+		{"read_file", 'f', "FILE", 0, "navigates to ESL file from working directiory"},
+		{"path_to_vars", 'p', "PATH" ,0, pathFlagUsage},
+		{0}
+	};
+
+	struct argp argp = {
+		options, parse_opt, "[VARIABLE]", 
+		helpString
+	};
+	rc = argp_parse( &argp, argc, argv, ARGP_NO_EXIT | ARGP_IN_ORDER, 0, &args);
+	if (rc || args.helpFlag)
+		goto out;
+
+	rc = readFiles(args.varName, args.inFile, !args.printRaw, args.pathToSecVars);
+
+out:
+	if (programName) free(programName);
+	if (pathFlagUsage) free(pathFlagUsage);
+	if (variableString) free(variableString);
+	if (helpString) free(helpString);
+
+	return rc;	
+}
+
+/**
+ *@param key , every option that is parsed has a value to identify it
+ *@param arg, if key is an option than arg will hold its value ex: -<key> <arg>
+ *@param state,  argp_state struct that contains useful information about the current parsing state 
+ *@return success or errno
+ */
+static int parse_opt(int key, char *arg, struct argp_state *state) 
+{
+	struct Arguments *args = state->input;
+	int rc = SUCCESS;
+	//this checks to see if help/usage is requested
+	//argp can either exit() or raise no errors, we want to go to cleanup and then exit so we need a special flag
+	//this becomes extra sticky since --usage/--help never actually get passed to this function
+	if (args->helpFlag == 0) {
+		if (state->next == 0 && state->next + 1 < state->argc) {
+			if (strncmp("--u", state->argv[state->next + 1], strlen("--u")) == 0 
+				|| strncmp("--h", state->argv[state->next + 1], strlen("--h")) == 0
+				|| strncmp("-?", state->argv[state->next + 1], strlen("-?")) == 0)
+				args->helpFlag = 1;
+		}
+		else if (state->next < state->argc)
+			if (strncmp("--u", state->argv[state->next], strlen("--u")) == 0 
+				|| strncmp("--h", state->argv[state->next], strlen("--h")) == 0
+				|| strncmp("-?", state->argv[state->next], strlen("-?")) == 0)
+				args->helpFlag = 1;
+	}
+
+	switch (key) {
+		case 'r':
+			args->printRaw = 1;
+			break;
+		case 'p':
+			args->pathToSecVars = arg;
+			break;
+		case 'f':
+			args->inFile = arg;
+			break;
+		case 'v':
+			verbose = PR_DEBUG;
+			break;
+		case ARGP_KEY_ARG:
+			args->varName = arg;
+			rc = isVariable(args->varName);
+			if (rc) 
+				prlog(PR_ERR, "ERROR: Invalid variable name %s\n", args->varName);
+			break;
+	}
+
+	if (rc) 
+		prlog(PR_ERR, "Failed during argument parsing\n");
+
+	return rc;
+}
+
+
+/**
+ *Function that recieves arguments to read command and handles getting data, finding paths, iterating through variables to read
+ *@param var  string to variable wanted if <variable> option is given, NULL if not
+ *@param file string to filename with path if -f option, NULL if not
+ *@param hrFLag 1 if -hr for human readable output, 0 for raw data
+ *@param path string to path where {PK,KEK,db,dbx,TS} subdirectories are, default POWERNV_SECVARPATH if none given
+ *@return succcess if at least one file was successfully read
+ */
+static int readFiles(const char* var, const char* file, int hrFlag, const char *path) 
+{  
+	// program is successful if at least one var was able to be read
+	int rc, successCount = 0;
+
+	if (file) prlog(PR_NOTICE, "Looking in file %s for ESL's\n", file); 
+	else prlog(PR_NOTICE, "Looking in %s for %s variable with %s format\n", path ? path : current_backend->default_secvar_path, var ? var : "ALL", hrFlag ? "ASCII" : "raw_data");
+	
+	// set default path if no path chosen
+	if (!path) { 
+		path = current_backend->default_secvar_path;
+	}
+
+	if (!file) {
+		for (int i = 0; i < current_backend->sb_variables_count; i++) {
+			// if var is defined and it is not the current one then skip
+			if (var && strcmp(var, current_backend->sb_variables[i]) != 0) {	
+				continue;
+			}
+			printf("READING %s :\n", current_backend->sb_variables[i]);
+			rc = readFileFromSecVar(path, current_backend->sb_variables[i], hrFlag);
+			if (rc == SUCCESS) successCount++;
+		}
+	}
+	else {
+		rc = readFileFromPath(file, hrFlag);
+		if (rc == SUCCESS) successCount++;
+	} 
+	// if no good files read then count it as a failure
+	if (successCount < 1) {
+		prlog(PR_ERR, "No valid files to print, returning failure\n");
+		return INVALID_FILE;
+	}
+
+	return SUCCESS;
+}
+
+/**
+ *Does the appropriate read command depending on hrFlag on the file <path>/<var>/data
+ *@param path , the path to the file with ending '/'
+ *@param variable , variable name one of {db,dbx,KEK,PK,TS}
+ *@param hrFlag, 1 for human readable 0 for raw data
+ *@return SUCCESS or error number
+ */
+static int readFileFromSecVar(const char *path, const char *variable, int hrFlag)
+{
+	int rc;
+	struct secvar *var = NULL;
+
+	rc = getSecVar(&var, variable, path);
+	
+
+	if (rc) {
+		goto out;
+	}
+	if (hrFlag) {
+		if (var->data_size == 0) {
+			printf("%s is empty\n", var->key);
+			rc = SUCCESS;
+		}
+		//no need to check if efivarfs since already running based on variables decribed for backend, error woulf have been thrown earlier
+		else if (strcmp(var->key, "TS") == 0) 
+			rc = readTS(var->data, var->data_size);
+		else
+			rc = printReadable(var->data, var->data_size, var->key);
+
+		if (rc)
+			prlog(PR_WARNING, "ERROR: Could not parse file, continuing...\n");
+	}
+	else {
+		printRaw(var->data, var->data_size);
+		rc = SUCCESS;
+	}
+	
+out:
+	dealloc_secvar(var);
+	
+	return rc;
+}
+
+/**
+ *Does the appropriate read command depending on hrFlag on the file 
+ *@param file , the path to the file 
+ *@param hrFlag, 1 for human readable 0 for raw data
+ *@return SUCCESS or error number
+ */
+static int readFileFromPath(const char *file, int hrFlag)
+{
+	int rc;
+	size_t size = 0;
+	char *c = NULL;
+	c = getDataFromFile(file, &size);
+	if (!c) {
+		return INVALID_FILE;
+	}
+	if (hrFlag) {
+		rc = printReadable(c, size, NULL);
+		if(rc)
+			prlog(PR_WARNING,"ERROR: Could not parse file\n");
+		else
+			rc = SUCCESS; 		
+	}
+	else {
+		printRaw(c, size);
+		rc = SUCCESS;
+	}
+	free(c);
+
+	return rc;
+}
+
+/**
+ *gets the secvar struct from a file
+ *@param var , returned secvar
+ *@param name , secure variable name {db,dbx,KEK,PK}
+ *@param path, path to secvars 
+ *NOTE: THIS IS ALLOCATING DATA AND var STILL NEEDS TO BE DEALLOCATED
+ */
+int getSecVar(struct secvar **var, const char* name, const char *path){
+	int rc;
+	size_t size;
+	char *c = NULL;
+	
+	//read from backend specific sysfs
+	rc = current_backend->readFileFromSysfs(&c, &size, path, name);
+	if (rc)
+		return rc;
+
+	*var = new_secvar(name, strlen(name) + 1, c, size, 0);
+	if (*var == NULL) {
+		prlog(PR_ERR, "ERROR: Could not convert data to secvar\n");
+		free(c);
+		return INVALID_FILE;
+	}
+	free(c);
+
+	return rc;
+}
+
+/*
+ *prints human readable data in of ESL buffer
+ *@param c , buffer containing ESL data
+ *@param size , length of buffer
+ *@param key, variable name {"db","dbx","KEK", "PK"} b/c dbx is a different format
+ *@return SUCCESS or error number if failure
+ */
+static int printReadable(const char *c, size_t size, const char *key) 
+{
+	ssize_t eslvarsize = size, cert_size;
+	size_t  eslsize = 0;
+	int count = 0, offset = 0, rc;
+	unsigned char *cert = NULL;
+	EFI_SIGNATURE_LIST *sigList;
+	mbedtls_x509_crt *x509 = NULL;
+
+	while (eslvarsize > 0) {
+		if (eslvarsize < sizeof(EFI_SIGNATURE_LIST)) { 
+			prlog(PR_ERR, "ERROR: ESL has %zd bytes and is smaller than an ESL (%zd bytes), remaining data not parsed\n", eslvarsize, sizeof(EFI_SIGNATURE_LIST));
+			break;
+		}
+		// Get sig list
+		sigList = get_esl_signature_list(c + offset, eslvarsize);
+		// check size info is logical 
+		if (sigList->SignatureListSize > 0) {
+			if ((sigList->SignatureSize <= 0 && sigList->SignatureHeaderSize <= 0) 
+				|| sigList->SignatureListSize < sigList->SignatureHeaderSize + sigList->SignatureSize) {
+				/*printf("Sig List : %d , sig Header: %d, sig Size: %d\n",list.SignatureListSize,list.SignatureHeaderSize,list.SignatureSize);*/
+				prlog(PR_ERR,"ERROR: Sig List is not structured correctly, defined size and actual sizes are mismatched\n");
+				break;
+			}	
+		}
+		if (sigList->SignatureListSize  > eslvarsize || sigList->SignatureHeaderSize > eslvarsize || sigList->SignatureSize > eslvarsize) {
+			prlog(PR_ERR, "ERROR: Expected Sig List Size %d + Header size %d + Signature Size is %d larger than actual size %zd\n", sigList->SignatureListSize, sigList->SignatureHeaderSize, sigList->SignatureSize, eslvarsize);
+			break;
+		}
+		eslsize = sigList->SignatureListSize;
+		printESLInfo(sigList);
+		// puts sig data in cert
+		cert_size = get_esl_cert(c + offset, sigList, (char **)&cert); 
+		if (cert_size <= 0) {
+			prlog(PR_ERR, "\tERROR: Signature Size was too small, no data \n");
+			break;
+		}
+		if (key && !strcmp(key, "dbx")) {
+			printf("\tHash: ");
+			printHex(cert, cert_size);
+		}
+		else {
+			x509 = malloc(sizeof(*x509));
+			if (!x509) {
+				prlog(PR_ERR, "ERROR: failed to allocate memory\n");
+				return ALLOC_FAIL;
+			}
+			rc = parseX509(x509, cert, (size_t) cert_size);
+			if (rc)
+				break;
+			rc = printCertInfo(x509);
+			if (rc)
+				break;
+			free(cert);
+			cert = NULL;
+			mbedtls_x509_crt_free(x509);
+			free(x509);
+			x509 = NULL;
+		}
+		
+		count++;	
+		 // we read all eslsize bytes so iterate to next esl	
+		offset += eslsize;
+		// size left of total file
+		eslvarsize -= eslsize;	
+	}
+	printf("\tFound %d ESL%s\n\n", count, count > 1 ? "s" : "");
+	if (x509) {
+		mbedtls_x509_crt_free(x509);
+		free(x509);
+	}
+	if (cert) 
+		free(cert);
+
+	if (!count)
+		return ESL_FAIL;
+
+	return SUCCESS;
+}
+
+//prints info on ESL, nothing on ESL data
+void printESLInfo(EFI_SIGNATURE_LIST *sigList) 
+{
+	printf("\tESL Size: %d\n", sigList->SignatureListSize);
+	printf("\tGUID: ");
+	printGuidSig(&sigList->SignatureType);
+	printf("\tSignature Type: %s\n", getSigType(sigList->SignatureType));
+}
+
+//prints info on x509
+int printCertInfo(mbedtls_x509_crt *x509)
+{
+	char *x509_info;
+	int failures;
+
+	x509_info = malloc(CERT_BUFFER_SIZE);
+	if (!x509_info){
+		prlog(PR_ERR, "ERROR: failed to allocate memory\n");
+		return CERT_FAIL;
+	}
+	// failures = number of bytes written, x509_info now has string of ascii data
+	failures = mbedtls_x509_crt_info(x509_info, CERT_BUFFER_SIZE, "\t\t", x509); 
+	if (failures <= 0) {
+		prlog(PR_ERR, "\tERROR: Failed to get cert info, wrote %d bytes when getting info\n", failures);
+		return CERT_FAIL;
+	}
+	printf("\tCertificate Info:\n %s", x509_info);
+	free(x509_info);
+
+	return SUCCESS;
+ }
+/**
+ *prints all 16 byte timestamps into human readable of TS variable
+ *@param data, timestamps of normal variables {pk, db, kek, dbx}
+ *@param size, size of timestamp data, should be 16*4
+ *@return SUCCESS or error depending if ts data is understandable
+ */
+static int readTS(const char *data, size_t size)
+{
+	struct efi_time *tmpStamp;
+	// data length must have a timestamp for every variable besides the TS variable
+	if (size != sizeof(struct efi_time) * (current_backend->sb_variables_count - 1)) {
+		prlog(PR_ERR,"ERROR: TS variable does not contain data on all the variables, expected %ld bytes of data, found %zd\n", sizeof(struct efi_time) * (current_backend->sb_variables_count - 1), size);
+		return INVALID_TIMESTAMP;
+	}
+
+	for (tmpStamp = (struct efi_time *)data; size > 0; tmpStamp = (void *)tmpStamp + sizeof(struct efi_time), size -= sizeof(struct efi_time)) {
+		//print variable name
+		printf("\t%s:\t", current_backend->sb_variables[(current_backend->sb_variables_count - 1) - (size / sizeof(struct efi_time))]);
+		printTimestamp(*tmpStamp);
+	}
+
+	return SUCCESS;
+}
+/** 
+ *inspired by secvar/backend/edk2-compat-process.c by Nayna Jain
+ *@param c  pointer to start of esl file
+ *@param cert empty buffer 
+ *@param list current siglist
+ *@return size of memory allocated to cert or negative number if allocation fails
+ */
+ssize_t get_esl_cert(const char *c, EFI_SIGNATURE_LIST *list , char **cert) 
+{
+	ssize_t size, dataOffset;
+	size = list->SignatureSize - sizeof(uuid_t);
+	dataOffset = sizeof(EFI_SIGNATURE_LIST) + list->SignatureHeaderSize + 16 * sizeof(uint8_t);
+	*cert = malloc(size);
+	if (!*cert){
+		prlog(PR_ERR, "ERROR: failed to allocate memory\n");
+		return ALLOC_FAIL;
+	}
+	// copies size bytes from eslfile-headerstuff and guid into cert
+	memcpy(*cert, c + dataOffset, size); 
+
+	return size;
+}
+
+/**
+ *finds format type given by guid
+ *@param type uuid_t of guid of file
+ *@return string of format type, "UNKNOWN" if type doesnt match any known formats
+ */
+const char* getSigType(const uuid_t type) 
+{
+	//loop through all known hashes
+	for (int i = 0; i < sizeof(hash_functions) / sizeof(struct hash_funct); i++) {
+		if (uuid_equals(&type, hash_functions[i].guid)) 
+			return hash_functions[i].name;	
+	}
+	//try other known guids
+	if (uuid_equals(&type, &EFI_CERT_X509_GUID)) return "X509";
+	else if (uuid_equals(&type, &EFI_CERT_RSA2048_GUID)) return "RSA2048";
+	else if (uuid_equals(&type, &EFI_CERT_TYPE_PKCS7_GUID))return "PKCS7";
+	
+	return "UNKNOWN";
+}
+
+/**
+ *prints guid id
+ *@param sig pointer to uuid_t
+ */
+void printGuidSig(const void *sig) 
+{
+	const unsigned char *p = sig;
+	for (int i = 0; i < 16; i++)
+		printf("%02hhx", p[i]);
+	printf("\n");
+}
+
+/**
+ *parses buffer into a EFI_SIG_LIST
+ *@param buf pointer to sig list buffer
+ *@param buflen length of buffer
+ *@return NULL if buflen is smaller than size of sig list stuct or if buff is empty
+ *@return EFI_SIG_LIST struct
+ */ 
+EFI_SIGNATURE_LIST* get_esl_signature_list(const char *buf, size_t buflen)
+{
+	EFI_SIGNATURE_LIST *list = NULL;
+	if (buflen < sizeof(EFI_SIGNATURE_LIST) || !buf) {
+		prlog(PR_ERR,"ERROR: SigList does not have enough data to be valid\n");
+		return NULL;
+	}
+	list = (EFI_SIGNATURE_LIST *)buf;
+
+	return list;
+}
+
+void printTimestamp(struct efi_time t)
+{
+	// NOTE: if auth is made with sign-efi-sig-list, year will be actual year+1 (see https:// blog.hansenpartnership.com/updating-pk-kek-db-and-x-in-user-mode/), 
+	// also month could be one less bc months are 0-11 not 1-12
+	printf("%04d-%02d-%02d %02d:%02d:%02d\n", t.year,t.month,t.day, t.hour, t.minute, t.second); 
+}
