@@ -59,23 +59,28 @@
 /* Prototypes */
 //ADDED BY NICK
 #include "prlog.h"
-static void pkcs7_free_signer_info( mbedtls_pkcs7_signer_info *si );
+//static void pkcs7_free_signer_info( mbedtls_pkcs7_signer_info *si );
 
 
+/*
+ * Load all data from a file into a given buffer.
+ *
+ * The file is expected to contain DER encoded data.
+ * A terminating null byte is always appended.
+ */
 int mbedtls_pkcs7_load_file( const char *path, unsigned char **buf, size_t *n )
 {
     FILE *file;
-    struct stat st;
-    int rc;
 
-    rc = stat( path, &st );
-    if( rc )
-        return( MBEDTLS_ERR_PKCS7_FILE_IO_ERROR );
+    if ( !path || !buf || !n )
+        return( MBEDTLS_ERR_PKCS7_BAD_INPUT_DATA );
 
     if( ( file = fopen( path, "rb" ) ) == NULL )
         return( MBEDTLS_ERR_PKCS7_FILE_IO_ERROR );
 
-    *n = (size_t) st.st_size;
+    fseek( file, 0, SEEK_END );
+    *n = (size_t) ftell( file );
+    fseek( file, 0, SEEK_SET );
 
     *buf = mbedtls_calloc( 1, *n + 1 );
     if( *buf == NULL )
@@ -98,7 +103,6 @@ int mbedtls_pkcs7_load_file( const char *path, unsigned char **buf, size_t *n )
     return( 0 );
 }
 
-
 /**
  * Initializes the pkcs7 structure.
  */
@@ -114,7 +118,9 @@ static int pkcs7_get_next_content_len( unsigned char **p, unsigned char *end,
 
     if( ( ret = mbedtls_asn1_get_tag( p, end, len, MBEDTLS_ASN1_CONSTRUCTED
                     | MBEDTLS_ASN1_CONTEXT_SPECIFIC ) ) != 0 )
+    {
         return( MBEDTLS_ERR_PKCS7_INVALID_FORMAT + ret );
+    }
 
     return( 0 );
 }
@@ -130,6 +136,10 @@ static int pkcs7_get_version( unsigned char **p, unsigned char *end, int *ver )
     if( ( ret = mbedtls_asn1_get_int( p, end, ver ) ) != 0 )
         return( MBEDTLS_ERR_PKCS7_INVALID_VERSION + ret );
 
+    /* If version != 1, return invalid version */
+    if( *ver != MBEDTLS_PKCS7_SUPPORTED_VERSION )
+        return( MBEDTLS_ERR_PKCS7_INVALID_VERSION );
+
     return( 0 );
 }
 
@@ -144,15 +154,18 @@ static int pkcs7_get_content_info_type( unsigned char **p, unsigned char *end,
 {
     size_t len = 0;
     int ret;
+    unsigned char *start = *p;
 
     ret = mbedtls_asn1_get_tag( p, end, &len, MBEDTLS_ASN1_CONSTRUCTED
                                             | MBEDTLS_ASN1_SEQUENCE );
-    if( ret )
+    if( ret != 0 )
         return( MBEDTLS_ERR_PKCS7_INVALID_CONTENT_INFO + ret );
 
     ret = mbedtls_asn1_get_tag( p, end, &len, MBEDTLS_ASN1_OID );
-    if( ret )
+    if( ret != 0 ) {
+        *p = start;
         return( MBEDTLS_ERR_PKCS7_INVALID_CONTENT_INFO + ret );
+    }
 
     pkcs7->tag = MBEDTLS_ASN1_OID;
     pkcs7->len = len;
@@ -172,7 +185,7 @@ static int pkcs7_get_digest_algorithm( unsigned char **p, unsigned char *end,
     int ret;
 
     if( ( ret = mbedtls_asn1_get_alg_null( p, end, alg ) ) != 0 )
-        return( MBEDTLS_ERR_PKCS7_INVALID_ALG + ret );
+        return( MBEDTLS_ERR_PKCS7_INVALID_ALG );
 
     return( 0 );
 }
@@ -196,8 +209,11 @@ static int pkcs7_get_digest_algorithm_set( unsigned char **p,
 
     /** For now, it assumes there is only one digest algorithm specified **/
     ret = mbedtls_asn1_get_alg_null( p, end, alg );
-    if( ret )
+    if( ret != 0 )
         return( MBEDTLS_ERR_PKCS7_INVALID_ALG + ret );
+
+    if ( *p != end )
+        return ( MBEDTLS_ERR_PKCS7_INVALID_FORMAT );
 
     return( 0 );
 }
@@ -207,35 +223,56 @@ static int pkcs7_get_digest_algorithm_set( unsigned char **p,
  * ExtendedCertificateOrCertificate ::= CHOICE {
  *      certificate Certificate -- x509,
  *      extendedCertificate[0] IMPLICIT ExtendedCertificate }
+ * Return number of certificates added to the signed data,
+ * 0 or higher is valid.
+ * Return negative error code for failure.
  **/
-static int pkcs7_get_certificates( unsigned char **buf, size_t buflen,
+static int pkcs7_get_certificates( unsigned char **p, unsigned char *end,
                                    mbedtls_x509_crt *certs )
 {
-    int ret, offset = 0;
-    mbedtls_x509_crt *next = NULL, *prev = NULL;
+    int ret;
+    size_t len1 = 0;
+    size_t len2 = 0;
+    unsigned char *end_set, *end_cert;
+    unsigned char *start = *p;
 
-    //get first one
-    if( ( ret = mbedtls_x509_crt_parse( certs, *buf, buflen ) ) < 0 )
-        return( ret );
-     offset += certs->raw.len;
-    prev = certs;
-    //get other ones if the length of the certificates is greater than the currently amount of read bytes
-    while (offset < buflen) {
-        next = malloc(sizeof(*next));
-        mbedtls_x509_crt_init(next);
-        //if it fails than unallocate, do not add to chain, return failure
-         if( ( ret = mbedtls_x509_crt_parse(next, *buf + offset, buflen - offset ) ) < 0 ) {
-            mbedtls_x509_crt_free(next);
-            if (next) free(next);
-            return( ret );
-         } 
-         //else add it to the chain and update the amount of read bytes of buflen
-        prev->next = next;
-        prev = next;
-        offset += prev->raw.len;
+    if( ( ret = mbedtls_asn1_get_tag( p, end, &len1, MBEDTLS_ASN1_CONSTRUCTED
+                    | MBEDTLS_ASN1_CONTEXT_SPECIFIC ) ) != 0 )
+    {
+        if( ret == MBEDTLS_ERR_ASN1_UNEXPECTED_TAG )
+            return( 0 );
+
+        return( MBEDTLS_ERR_PKCS7_INVALID_FORMAT + ret );
     }
+    start = *p;
+    end_set = *p + len1;
 
-    return( 0 );
+    ret = mbedtls_asn1_get_tag( p, end_set, &len2, MBEDTLS_ASN1_CONSTRUCTED
+            | MBEDTLS_ASN1_SEQUENCE );
+    if( ret != 0 )
+        return( MBEDTLS_ERR_PKCS7_INVALID_CERT + ret );
+
+    end_cert = *p + len2;
+
+    /*
+     * This is to verify that there is only one signer certificate. It seems it is
+     * not easy to differentiate between the chain vs different signer's certificate.
+     * So, we support only the root certificate and the single signer.
+     * The behaviour would be improved with addition of multiple signer support.
+     */
+    if (end_cert != end_set)
+        return ( MBEDTLS_ERR_PKCS7_INVALID_CERT );
+
+    *p = start;
+    if( ( ret = mbedtls_x509_crt_parse( certs, *p, len1 ) ) < 0 )
+        return( MBEDTLS_ERR_PKCS7_INVALID_CERT );
+
+    *p = *p + len1;
+
+    /* Since in this version we strictly support single certificate, and reaching
+     * here implies we have parsed successfully, we return 1. */
+
+    return( 1 );
 }
 
 /**
@@ -247,18 +284,21 @@ static int pkcs7_get_signature( unsigned char **p, unsigned char *end,
     int ret;
     size_t len = 0;
 
-    ret = mbedtls_asn1_get_tag(p, end, &len, MBEDTLS_ASN1_OCTET_STRING);
+    ret = mbedtls_asn1_get_tag( p, end, &len, MBEDTLS_ASN1_OCTET_STRING );
     if( ret != 0 )
-        return( MBEDTLS_ERR_PKCS7_INVALID_SIGNATURE + ret );
+        return( ret );
 
     signature->tag = MBEDTLS_ASN1_OCTET_STRING;
     signature->len = len;
     signature->p = *p;
 
+    *p = *p + len;
+
     return( 0 );
 }
 
 /**
+ * SignerInfos ::= SET of SignerInfo
  * SignerInfo ::= SEQUENCE {
  *      version Version;
  *      issuerAndSerialNumber   IssuerAndSerialNumber,
@@ -269,145 +309,89 @@ static int pkcs7_get_signature( unsigned char **p, unsigned char *end,
  *      encryptedDigest EncryptedDigest,
  *      unauthenticatedAttributes
  *              [1] IMPLICIT Attributes OPTIONAL,
+ * Return number of signers added to the signed data,
+ * 0 or higher is valid.
+ * Return negative error code for failure.
  **/
-static int pkcs7_get_signer_info( unsigned char **p, unsigned char *end_set,
-                                  mbedtls_pkcs7_signer_info *signer )
-{
-    int ret;
-    size_t len;
-    unsigned char *end_info;
-
-    ret = mbedtls_asn1_get_tag( p, end_set, &len, MBEDTLS_ASN1_CONSTRUCTED
-            | MBEDTLS_ASN1_SEQUENCE );
-    if( ret != 0 )
-        return( MBEDTLS_ERR_PKCS7_INVALID_SIGNER_INFO + ret );
-
-    end_info = *p + len;
-
-    ret = mbedtls_asn1_get_int( p, end_info, &signer->version );
-    if( ret != 0 )
-        return( MBEDTLS_ERR_PKCS7_INVALID_SIGNER_INFO + ret );
-
-    ret = mbedtls_asn1_get_tag( p, end_info, &len, MBEDTLS_ASN1_CONSTRUCTED
-            | MBEDTLS_ASN1_SEQUENCE );
-    if( ret != 0 )
-        return( MBEDTLS_ERR_PKCS7_INVALID_SIGNER_INFO + ret );
-
-    signer->issuer_raw.p = *p;
-
-    ret = mbedtls_asn1_get_tag( p, end_info, &len, MBEDTLS_ASN1_CONSTRUCTED
-            | MBEDTLS_ASN1_SEQUENCE );
-    if( ret != 0 )
-        return( MBEDTLS_ERR_PKCS7_INVALID_SIGNER_INFO + ret );
-
-    ret  = mbedtls_x509_get_name( p, *p + len, &signer->issuer );
-    if( ret != 0 )
-        return( ret );
-
-    signer->issuer_raw.len =  *p - signer->issuer_raw.p;
-
-    ret = mbedtls_x509_get_serial( p, end_info, &signer->serial );
-    if( ret != 0 )
-        return( ret );
-    ssize_t i;
-    prlog(PR_INFO, "\tpkcs7 message signer serial: ");
-    for (i = 0; i < (ssize_t)signer->serial.len - 1; i++)
-        prlog(PR_INFO, "%02x:", signer->serial.p[i]);
-    prlog(PR_INFO, "%02x\n", signer->serial.p[i]);
-    ret = pkcs7_get_digest_algorithm( p, end_info,
-            &signer->alg_identifier );
-    if( ret != 0 )
-        return( ret );
-
-    ret = pkcs7_get_digest_algorithm( p, end_info,
-            &signer->sig_alg_identifier );
-    if( ret != 0 )
-        return( ret );
-
-    ret = pkcs7_get_signature( p, end_info, &signer->sig );
-    if( ret != 0 )
-        return( ret );
-
-    signer->next = NULL;
-
-    /*
-     * place p at the end of the signerInfo, even if we didn't parse all the
-     * info
-     */
-    *p = end_info;
-
-    return( 0 );
-}
-
-/**
- * SignerInfos ::= SET OF SignerInfo
- */
 static int pkcs7_get_signers_info_set( unsigned char **p, unsigned char *end,
-                                       mbedtls_pkcs7_signer_info **signers_set )
+                                       mbedtls_pkcs7_signer_info *signers_set )
 {
-    unsigned char *end_set;
+    unsigned char *end_set, *end_set_signer;
     int ret;
     size_t len = 0;
-    mbedtls_pkcs7_signer_info *signer, *signer_prv;
 
     ret = mbedtls_asn1_get_tag( p, end, &len, MBEDTLS_ASN1_CONSTRUCTED
-            | MBEDTLS_ASN1_SET );
+                                | MBEDTLS_ASN1_SET );
     if( ret != 0 )
         return( MBEDTLS_ERR_PKCS7_INVALID_SIGNER_INFO + ret );
 
     end_set = *p + len;
 
-    if( len == 0 )
-    {
-        /* There are no signerInfos, bail out now. */
-        return( 0 );
-    }
-
-    /* parse the first one */
-    signer = mbedtls_calloc( 1, sizeof( mbedtls_pkcs7_signer_info ) );
-    if (signer == NULL)
-        return( MBEDTLS_ERR_PKCS7_ALLOC_FAILED );
-
-    *signers_set = signer;
-
-    ret = pkcs7_get_signer_info( p, end_set, signer );
+    ret = mbedtls_asn1_get_tag( p, end_set, &len, MBEDTLS_ASN1_CONSTRUCTED
+                                | MBEDTLS_ASN1_SEQUENCE );
     if( ret != 0 )
-        goto cleanup;
+        return( MBEDTLS_ERR_PKCS7_INVALID_SIGNER_INFO + ret );
 
-    /* parse any subsequent ones */
-    signer_prv = signer;
-    while( *p != end_set )
-    {
-        signer = mbedtls_calloc( 1, sizeof( mbedtls_pkcs7_signer_info ) );
-        if (signer == NULL)
-        {
-            ret = MBEDTLS_ERR_PKCS7_ALLOC_FAILED;
-            goto cleanup;
-        }
+    end_set_signer = *p + len;
+    if (end_set_signer != end_set)
+        return ( MBEDTLS_ERR_PKCS7_INVALID_SIGNER_INFO );
 
-        ret = pkcs7_get_signer_info( p, end_set, signer );
-        if( ret != 0 )
-        {
-            mbedtls_free( signer );
-            goto cleanup;
-        }
+    end_set = end_set_signer;
 
-        signer_prv->next = signer;
-        signer_prv = signer;
-    }
+    ret = mbedtls_asn1_get_int( p, end_set, &signers_set->version );
+    if( ret != 0 )
+        return( MBEDTLS_ERR_PKCS7_INVALID_SIGNER_INFO );
 
-    return( 0 );
+    ret = mbedtls_asn1_get_tag( p, end_set, &len, MBEDTLS_ASN1_CONSTRUCTED
+                                | MBEDTLS_ASN1_SEQUENCE );
+    if( ret != 0 )
+        return( MBEDTLS_ERR_PKCS7_INVALID_SIGNER_INFO + ret );
 
-cleanup:
-    signer = *signers_set;
-    while( signer )
-    {
-        signer_prv = signer;
-        signer = signer->next;
-        pkcs7_free_signer_info( signer_prv );
-        mbedtls_free( signer_prv );
-    }
-    return( ret );
+    /* Parsing IssuerAndSerialNumber */
+    signers_set->issuer_raw.p = *p;
+
+    ret = mbedtls_asn1_get_tag( p, end_set, &len, MBEDTLS_ASN1_CONSTRUCTED
+                                | MBEDTLS_ASN1_SEQUENCE );
+    if( ret != 0 )
+        return( MBEDTLS_ERR_PKCS7_INVALID_SIGNER_INFO + ret );
+
+    ret  = mbedtls_x509_get_name( p, *p + len, &signers_set->issuer );
+    if( ret != 0 )
+        return( MBEDTLS_ERR_PKCS7_INVALID_SIGNER_INFO );
+
+    signers_set->issuer_raw.len =  *p - signers_set->issuer_raw.p;
+
+    ret = mbedtls_x509_get_serial( p, end_set, &signers_set->serial );
+    if( ret != 0 )
+        return( MBEDTLS_ERR_PKCS7_INVALID_SIGNER_INFO );
+    //added by Nick Child
+    ssize_t i;
+    prlog(PR_INFO, "\tpkcs7 message signer serial: ");
+    for (i = 0; i < (ssize_t)signers_set->serial.len - 1; i++)
+        prlog(PR_INFO, "%02x:", signers_set->serial.p[i]);
+    prlog(PR_INFO, "%02x\n", signers_set->serial.p[i]);
+
+    ret = pkcs7_get_digest_algorithm( p, end_set, &signers_set->alg_identifier );
+    if( ret != 0 )
+        return( MBEDTLS_ERR_PKCS7_INVALID_SIGNER_INFO );
+
+    ret = pkcs7_get_digest_algorithm( p, end_set, &signers_set->sig_alg_identifier );
+    if( ret != 0 )
+        return( MBEDTLS_ERR_PKCS7_INVALID_SIGNER_INFO );
+
+    ret = pkcs7_get_signature( p, end_set, &signers_set->sig );
+    if( ret != 0 )
+        return( MBEDTLS_ERR_PKCS7_INVALID_SIGNER_INFO );
+
+    signers_set->next = NULL;
+
+    if (*p != end_set)
+        return ( MBEDTLS_ERR_PKCS7_INVALID_SIGNER_INFO );
+
+    /* Since in this version we strictly support single signer, and reaching
+     * here implies we have parsed successfully, we return 1. */
+
+    return( 1 );
 }
 
 /**
@@ -423,90 +407,108 @@ cleanup:
  *      signerInfos SignerInfos }
  */
 static int pkcs7_get_signed_data( unsigned char *buf, size_t buflen,
-        mbedtls_pkcs7_signed_data *signed_data )
+                                  mbedtls_pkcs7_signed_data *signed_data )
 {
     unsigned char *p = buf;
     unsigned char *end = buf + buflen;
+    unsigned char *end_set;
     size_t len = 0;
     int ret;
     mbedtls_md_type_t md_alg;
 
     ret = mbedtls_asn1_get_tag( &p, end, &len, MBEDTLS_ASN1_CONSTRUCTED
-            | MBEDTLS_ASN1_SEQUENCE );
+                                | MBEDTLS_ASN1_SEQUENCE );
     if( ret != 0 )
         return( MBEDTLS_ERR_PKCS7_INVALID_FORMAT + ret );
 
+    end_set = p + len;
+
     /* Get version of signed data */
-    ret = pkcs7_get_version( &p, end, &signed_data->version );
+    ret = pkcs7_get_version( &p, end_set, &signed_data->version );
     if( ret != 0 )
         return( ret );
 
-    /* If version != 1, return invalid version */
-    if( signed_data->version != MBEDTLS_PKCS7_SUPPORTED_VERSION ) {
-        return( MBEDTLS_ERR_PKCS7_INVALID_VERSION );
-    }
-
     /* Get digest algorithm */
-    ret = pkcs7_get_digest_algorithm_set( &p, end,
+    ret = pkcs7_get_digest_algorithm_set( &p, end_set,
             &signed_data->digest_alg_identifiers );
-    if( ret != 0 ) {
+    if( ret != 0 )
         return( ret );
-    }
 
     ret = mbedtls_oid_get_md_alg( &signed_data->digest_alg_identifiers, &md_alg );
     if( ret != 0 )
-        return( MBEDTLS_ERR_PKCS7_INVALID_ALG + ret );
+        return( MBEDTLS_ERR_PKCS7_INVALID_ALG );
 
     /* Do not expect any content */
-    ret = pkcs7_get_content_info_type( &p, end, &signed_data->content.oid );
+    ret = pkcs7_get_content_info_type( &p, end_set, &signed_data->content.oid );
     if( ret != 0 )
         return( ret );
 
-    if( MBEDTLS_OID_CMP( MBEDTLS_OID_PKCS7_DATA, &signed_data->content.oid ) ) {
+    if( MBEDTLS_OID_CMP( MBEDTLS_OID_PKCS7_DATA, &signed_data->content.oid ) )
+    {
         return( MBEDTLS_ERR_PKCS7_INVALID_CONTENT_INFO ) ;
     }
 
     p = p + signed_data->content.oid.len;
 
     /* Look for certificates, there may or may not be any */
-    ret = pkcs7_get_next_content_len( &p, end, &len );
-    if( ret == 0 ) {
-        mbedtls_x509_crt_init( &signed_data->certs );
-        ret = pkcs7_get_certificates( &p, len, &signed_data->certs );
-        if( ret != 0 )
-            return( ret ) ;
+    mbedtls_x509_crt_init( &signed_data->certs );
+    ret = pkcs7_get_certificates( &p, end_set, &signed_data->certs );
+    if( ret < 0 )
+        return( ret ) ;
 
-      p = p + len;
-    }
+    signed_data->no_of_certs = ret;
 
-    /* TODO: optional CRLs go here */
+    /*
+     * Currently CRLs are not supported. If CRL exist, the parsing will fail
+     * at next step of getting signers info and return error as invalid
+     * signer info.
+     */
+
+    signed_data->no_of_crls = 0;
 
     /* Get signers info */
-    ret = pkcs7_get_signers_info_set( &p, end, &signed_data->signers );
-    if( ret != 0 )
+    ret = pkcs7_get_signers_info_set( &p, end_set, &signed_data->signers );
+    if( ret < 0 )
         return( ret );
 
+    signed_data->no_of_signers = ret;
+
+    /* Support single signer */
+    if ( p != end )
+        ret = MBEDTLS_ERR_PKCS7_INVALID_FORMAT;
+
+    ret = 0;
     return( ret );
 }
 
 int mbedtls_pkcs7_parse_der( const unsigned char *buf, const int buflen,
-        mbedtls_pkcs7 *pkcs7 )
+                             mbedtls_pkcs7 *pkcs7 )
 {
     unsigned char *start;
     unsigned char *end;
     size_t len = 0;
     int ret;
+    int isoidset = 0;
 
-    /* use internal buffer for parsing */
-    start = ( unsigned char * )buf;
-    end = start + buflen;
-
-    if(!pkcs7)
+    if( !pkcs7 )
         return( MBEDTLS_ERR_PKCS7_BAD_INPUT_DATA );
+
+    /* make an internal copy of the buffer for parsing */
+    pkcs7->raw.p = start = mbedtls_calloc( 1, buflen );
+    if( pkcs7->raw.p == NULL )
+    {
+        return( MBEDTLS_ERR_PKCS7_ALLOC_FAILED );
+    }
+    memcpy( start, buf, buflen );
+    pkcs7->raw.len = buflen;
+    end = start + buflen;
 
     ret = pkcs7_get_content_info_type( &start, end, &pkcs7->content_type_oid );
     if( ret != 0 )
+    {
+        len = buflen;
         goto try_data;
+    }
 
     if( ! MBEDTLS_OID_CMP( MBEDTLS_OID_PKCS7_DATA, &pkcs7->content_type_oid )
      || ! MBEDTLS_OID_CMP( MBEDTLS_OID_PKCS7_ENCRYPTED_DATA, &pkcs7->content_type_oid )
@@ -525,26 +527,31 @@ int mbedtls_pkcs7_parse_der( const unsigned char *buf, const int buflen,
         goto out;
     }
 
+    isoidset = 1;
     start = start + pkcs7->content_type_oid.len;
-
-try_data:
-
 
     ret = pkcs7_get_next_content_len( &start, end, &len );
     if( ret != 0 )
         goto out;
 
+try_data:
     ret = pkcs7_get_signed_data( start, len, &pkcs7->signed_data );
-    if (ret != 0)
+    if ( ret != 0 )
         goto out;
 
-    pkcs7->content_type_oid.tag = MBEDTLS_ASN1_OID;
-    pkcs7->content_type_oid.len = MBEDTLS_OID_SIZE(MBEDTLS_OID_PKCS7_SIGNED_DATA);
-    pkcs7->content_type_oid.p = (unsigned char *)MBEDTLS_OID_PKCS7_SIGNED_DATA;
+    if ( !isoidset )
+    {
+        pkcs7->content_type_oid.tag = MBEDTLS_ASN1_OID;
+        pkcs7->content_type_oid.len = MBEDTLS_OID_SIZE(MBEDTLS_OID_PKCS7_SIGNED_DATA);
+        pkcs7->content_type_oid.p = (unsigned char *)MBEDTLS_OID_PKCS7_SIGNED_DATA;
+    }
 
     ret = MBEDTLS_PKCS7_SIGNED_DATA;
 
 out:
+    if ( ret < 0 )
+        mbedtls_pkcs7_free( pkcs7 );
+
     return( ret );
 }
 
@@ -556,24 +563,25 @@ int mbedtls_pkcs7_signed_data_verify( mbedtls_pkcs7 *pkcs7,
 
     int ret;
     unsigned char *hash;
+    mbedtls_pk_context pk_cxt = cert->pk;
     const mbedtls_md_info_t *md_info;
     mbedtls_md_type_t md_alg;
 
     ret = mbedtls_oid_get_md_alg( &pkcs7->signed_data.digest_alg_identifiers, &md_alg );
     if( ret != 0 )
-        return( MBEDTLS_ERR_PKCS7_INVALID_ALG + ret );
+        return( MBEDTLS_ERR_PKCS7_VERIFY_FAIL );
 
     md_info = mbedtls_md_info_from_type( md_alg );
-
     hash = mbedtls_calloc( mbedtls_md_get_size( md_info ), 1 );
+
     if( hash == NULL ) {
         return( MBEDTLS_ERR_PKCS7_ALLOC_FAILED );
     }
 
     mbedtls_md( md_info, data, datalen, hash );
-
-    ret = mbedtls_pkcs7_signed_hash_verify( pkcs7, cert,
-                                            hash, sizeof( hash ) );
+    ret = mbedtls_pk_verify( &pk_cxt, md_alg, hash, 0,
+                                      pkcs7->signed_data.signers.sig.p,
+                                      pkcs7->signed_data.signers.sig.len );
 
     mbedtls_free( hash );
 
@@ -587,53 +595,17 @@ int mbedtls_pkcs7_signed_hash_verify( mbedtls_pkcs7 *pkcs7,
     int ret;
     mbedtls_md_type_t md_alg;
     mbedtls_pk_context pk_cxt;
-    mbedtls_pkcs7_signer_info *signer;
 
     ret = mbedtls_oid_get_md_alg( &pkcs7->signed_data.digest_alg_identifiers, &md_alg );
     if( ret != 0 )
-        return( MBEDTLS_ERR_PKCS7_INVALID_ALG + ret );
+        return( MBEDTLS_ERR_PKCS7_VERIFY_FAIL );
 
     pk_cxt = cert->pk;
+    ret = mbedtls_pk_verify( &pk_cxt, md_alg, hash, hashlen,
+                             pkcs7->signed_data.signers.sig.p,
+                             pkcs7->signed_data.signers.sig.len );
 
-    /*
-     * Potential TODO
-     * Currently we iterate over all signers and return success if any of them
-     * verify.
-     *
-     * However, we could make this better by checking against the certificate's
-     * identification and SignerIdentifier fields first. That would also allow
-     * us to distinguish between 'no signature for key' and 'signature for key
-     * failed to validate'.
-     */
-
-    signer = pkcs7->signed_data.signers;
-    while( signer != NULL )
-    {
-        ret = mbedtls_pk_verify( &pk_cxt, md_alg, hash, hashlen,
-                                 signer->sig.p,
-                                 signer->sig.len );
-        if( ret == 0 )
-            return( ret );
-        signer = signer->next;
-    }
     return ( ret );
-}
-
-/*
- * Deallocate the contents of a pkcs7 signer_info
- */
-static void pkcs7_free_signer_info( mbedtls_pkcs7_signer_info *si )
-{
-    mbedtls_x509_name *name_cur;
-    mbedtls_x509_name *name_prv;
-
-    name_cur = si->issuer.next;
-    while( name_cur != NULL )
-    {
-        name_prv = name_cur;
-        name_cur = name_cur->next;
-        mbedtls_free( name_prv );
-    }
 }
 
 /*
@@ -641,8 +613,8 @@ static void pkcs7_free_signer_info( mbedtls_pkcs7_signer_info *si )
  */
 void mbedtls_pkcs7_free( mbedtls_pkcs7 *pkcs7 )
 {
-    mbedtls_pkcs7_signer_info *si_cur;
-    mbedtls_pkcs7_signer_info *si_prv;
+    mbedtls_x509_name *name_cur;
+    mbedtls_x509_name *name_prv;
 
     if( pkcs7 == NULL )
         return;
@@ -650,12 +622,17 @@ void mbedtls_pkcs7_free( mbedtls_pkcs7 *pkcs7 )
     mbedtls_x509_crt_free( &pkcs7->signed_data.certs );
     mbedtls_x509_crl_free( &pkcs7->signed_data.crl );
 
-    si_cur = pkcs7->signed_data.signers;
-    while( si_cur != NULL )
+    name_cur = pkcs7->signed_data.signers.issuer.next;
+    while( name_cur != NULL )
     {
-        si_prv = si_cur;
-        si_cur = si_cur->next;
-        pkcs7_free_signer_info( si_prv );
-        mbedtls_free( si_prv );
+        name_prv = name_cur;
+        name_cur = name_cur->next;
+        mbedtls_platform_zeroize( name_prv, sizeof( mbedtls_x509_name ) );
+        mbedtls_free( name_prv );
     }
+
+    mbedtls_platform_zeroize( pkcs7->raw.p, pkcs7->raw.len );
+    mbedtls_free( pkcs7->raw.p );
+
+    mbedtls_platform_zeroize( pkcs7, sizeof( mbedtls_pkcs7 ) );
 }
