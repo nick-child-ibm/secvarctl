@@ -9,23 +9,6 @@
 #include "backends/powernv/include/edk2-svc.h"
 #include "backends/efivarfs/include/efivarfs.h"
 
-
-/*static struct backend powernv_backend = { 
-    .name = "ibm,edk2-compat-v1", 
-    .countCmds = sizeof(edk2_compat_command_table) / sizeof(struct command), 
-    .commands = edk2_compat_command_table,
-    .default_secvar_path = POWERNV_SECVARPATH,
-    .sb_variables = POWERNV_VARIABLES
-
-};
-static struct backend efivarfs_backend = { 
-    .name = "efi_vars", 
-    .countCmds = sizeof(efi_var_command_table) / sizeof(struct command), 
-    .commands = efi_var_command_table,
-    .default_secvar_path = EFI_SECVARPATH,
-    .sb_variables = EFI_VARIABLES 
-};
-*/
 //array of currently supported backends and their commands/info
 struct backend backends [] = {
     //power_nv_backend
@@ -36,7 +19,8 @@ struct backend backends [] = {
     .default_secvar_path = POWERNV_SECVARPATH,
     .sb_variables = POWERNV_VARIABLES,
     .sb_variables_count = ARRAY_SIZE(POWERNV_VARIABLES),
-    .readFileFromSysfs = readFileFromSysfs_powernv
+    .readFileFromSysfs = readFileFromSysfs_powernv,
+    .pkcs7_desc = "file is a PKCS7"
     },
 
     //efivarfs_backend
@@ -47,7 +31,8 @@ struct backend backends [] = {
     .default_secvar_path = EFI_SECVARPATH,
     .sb_variables = EFI_VARIABLES,
     .sb_variables_count = ARRAY_SIZE(EFI_VARIABLES),
-    .readFileFromSysfs = readFileFromSysfs_efivarfs
+    .readFileFromSysfs = readFileFromSysfs_efivarfs,
+    .pkcs7_desc = "file is a PKCS7, w only Signed Data"
     }
 };
 //enum corresponding to index of respective backend from backends[]

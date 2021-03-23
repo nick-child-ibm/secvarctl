@@ -18,6 +18,8 @@ struct backend {
     const char **sb_variables;
     size_t sb_variables_count;
     int (*readFileFromSysfs)(char **outData, size_t *outSize, const char *path, const char *variable);
+    //used for usage/help messages
+    const char *pkcs7_desc;
 };
 
 char * getDataFromFile(const char *file, size_t* size);

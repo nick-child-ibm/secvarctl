@@ -64,7 +64,8 @@ int performValidation(int argc, char* argv[])
 	struct argp_option options[] = 
 	{
 		{"verbose", 'v', 0, 0, "print more verbose process information"},
-		{"pkcs7", 'p', 0 ,0, "file is a PKCS7"},
+		//pkcs7 format is backend dependent
+		{"pkcs7", 'p', 0 ,0, current_backend->pkcs7_desc},
 		{"esl", 'e', 0, 0, "file is an EFI Signature List (ESL)"},
 		{"cert", 'c', 0 ,0, "file is an x509 cert (DER or PEM format)"},
 		{"auth", 'a', 0, 0, "file is a properly generated authenticated variable, DEFAULT"},
@@ -308,7 +309,7 @@ int validatePKCS7(const unsigned char *cert_data, size_t len)
 	}
 	mbedtls_pkcs7_init(pkcs7);
 	rc = mbedtls_pkcs7_parse_der(cert_data, len, pkcs7);
-	if (rc != MBEDTLS_PKCS7_SIGNED_DATA) {	// if pkcs7 parsing fails, then try new signed data format 
+	if (rc != MBEDTLS_PKCS7_SIGNED_DATA) {	 
 			prlog(PR_ERR, "ERROR: parsing pkcs7 failed mbedtls error #%04x\n", rc);
 			goto out;	
 	}
