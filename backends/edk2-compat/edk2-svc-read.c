@@ -12,6 +12,7 @@
 #include "libstb/secvar/crypto/crypto.h"
 #include "external/skiboot/libstb/secvar/secvar.h" // for secvar struct
 #include "backends/edk2-compat/include/edk2-svc.h"
+#include <ccan/endian/endian.h> //for you know big end
 
 static int readFiles(const char *var, const char *file, int hrFlag, const char *path);
 static int printReadable(const char *c, size_t size, const char *key);
@@ -366,26 +367,29 @@ static int printReadable(const char *c, size_t size, const char *key)
 		// Get sig list
 		sigList = get_esl_signature_list(c + offset, eslvarsize);
 		// check size info is logical
-		if (sigList->SignatureListSize > 0) {
-			if ((sigList->SignatureSize <= 0 && sigList->SignatureHeaderSize <= 0) ||
-			    sigList->SignatureListSize <
-				    sigList->SignatureHeaderSize + sigList->SignatureSize) {
+		if (le32_to_cpu(sigList->SignatureListSize) > 0) {
+			if (le32_to_cpu((sigList->SignatureSize) <= 0 &&
+			     le32_to_cpu(sigList->SignatureHeaderSize) <= 0) ||
+			    le32_to_cpu(sigList->SignatureListSize) <
+				    le32_to_cpu(sigList->SignatureHeaderSize) +
+					    le32_to_cpu(sigList->SignatureSize)) {
 				/*printf("Sig List : %d , sig Header: %d, sig Size: %d\n",list.SignatureListSize,list.SignatureHeaderSize,list.SignatureSize);*/
 				prlog(PR_ERR,
 				      "ERROR: Sig List is not structured correctly, defined size and actual sizes are mismatched\n");
 				break;
 			}
 		}
-		if (sigList->SignatureListSize > eslvarsize ||
-		    sigList->SignatureHeaderSize > eslvarsize ||
-		    sigList->SignatureSize > eslvarsize) {
+		if (le32_to_cpu(sigList->SignatureListSize) > eslvarsize ||
+		    le32_to_cpu(sigList->SignatureHeaderSize) > eslvarsize ||
+		    le32_to_cpu(sigList->SignatureSize) > eslvarsize) {
 			prlog(PR_ERR,
 			      "ERROR: Expected Sig List Size %d + Header size %d + Signature Size is %d larger than actual size %zd\n",
-			      sigList->SignatureListSize, sigList->SignatureHeaderSize,
-			      sigList->SignatureSize, eslvarsize);
+			      le32_to_cpu(sigList->SignatureListSize),
+			      le32_to_cpu(sigList->SignatureHeaderSize),
+			      le32_to_cpu(sigList->SignatureSize), eslvarsize);
 			break;
 		}
-		eslsize = sigList->SignatureListSize;
+		eslsize = le32_to_cpu(sigList->SignatureListSize);
 		printESLInfo(sigList);
 		// puts sig data in cert
 		cert_size = get_esl_cert(c + offset, eslvarsize, (char **)&cert);
@@ -430,7 +434,7 @@ static int printReadable(const char *c, size_t size, const char *key)
 // prints info on ESL, nothing on ESL data
 void printESLInfo(EFI_SIGNATURE_LIST *sigList)
 {
-	printf("\tESL SIG LIST SIZE: %d\n", sigList->SignatureListSize);
+	printf("\tESL SIG LIST SIZE: %d\n", le32_to_cpu(sigList->SignatureListSize));
 	printf("\tGUID is : ");
 	printGuidSig(&sigList->SignatureType);
 	printf("\tSignature type is: %s\n", getSigType(sigList->SignatureType));

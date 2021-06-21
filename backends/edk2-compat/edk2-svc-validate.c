@@ -6,6 +6,7 @@
 #include <argp.h>
 #include "libstb/secvar/crypto/crypto.h"
 #include "include/edk2-svc.h"
+#include  <ccan/endian/endian.h>//for you know big end 
 
 struct Arguments {
 	int helpFlag;
@@ -184,7 +185,7 @@ int validateAuth(const unsigned char *authBuf, size_t buflen, const char *key)
 	}
 
 	// total size of auth and pkcs7 data (appended ESL not included)
-	authSize = auth->auth_info.hdr.dw_length + sizeof(auth->timestamp);
+	authSize = le32_to_cpu(auth->auth_info.hdr.dw_length) + sizeof(auth->timestamp);
 	// if expected length is greater than the actual length or not a valid size, return fail
 	if ((ssize_t)authSize <= 0 || authSize > buflen) {
 		prlog(PR_ERR, "ERROR: Invalid auth size, expected %zd found %zd\n", authSize,
@@ -239,7 +240,6 @@ int validateAuth(const unsigned char *authBuf, size_t buflen, const char *key)
 
 	return rc;
 }
-
 /**
  *calls Nayna Jain's pkcs7 functions to validate the pkcs7 inside of the given auth struct
  *@param auth, pointer to auth struct data containing the pkcs7 in auth->auth_info.hdr.cert_data
@@ -247,49 +247,49 @@ int validateAuth(const unsigned char *authBuf, size_t buflen, const char *key)
  */
 int validatePKCS7(const unsigned char *cert_data, size_t len)
 {
-	void *pkcs7_cert = NULL;
-	crypto_pkcs7 *pkcs7 = NULL;
-	int rc = SUCCESS, cert_num = 0;
+       void *pkcs7_cert = NULL;
+       crypto_pkcs7 *pkcs7 = NULL;
+       int rc = SUCCESS, cert_num = 0;
 
-	prlog(PR_INFO, "VALIDATING PKCS7:\n");
-	pkcs7 = crypto_pkcs7_parse_der(cert_data, len);
-	if (!pkcs7) {
-		rc = PKCS7_FAIL;
-		goto out;
-	}
-	// make sure digest alg is sha246
-	if (crypto_pkcs7_md_is_sha256(pkcs7) != 0) {
-		prlog(PR_ERR, "ERROR: PKCS7 data is not signed with SHA256\n");
-		rc = PKCS7_FAIL;
-		goto out;
-	}
-	prlog(PR_INFO, "\tDigest Alg: SHA256\n");
-	// print info on all siging certificates
-	pkcs7_cert = crypto_pkcs7_get_signing_cert(pkcs7, cert_num);
+       prlog(PR_INFO, "VALIDATING PKCS7:\n");
+       pkcs7 = crypto_pkcs7_parse_der(cert_data, len);
+       if (!pkcs7) {
+               rc = PKCS7_FAIL;
+               goto out;
+       }
+       // make sure digest alg is sha246
+       if (crypto_pkcs7_md_is_sha256(pkcs7) != 0) {
+               prlog(PR_ERR, "ERROR: PKCS7 data is not signed with SHA256\n");
+               rc = PKCS7_FAIL;
+               goto out;
+       }
+       prlog(PR_INFO, "\tDigest Alg: SHA256\n");
+       // print info on all siging certificates
+       pkcs7_cert = crypto_pkcs7_get_signing_cert(pkcs7, cert_num);
 
-	do {
-		prlog(PR_INFO, "VALIDATING SIGNING CERTIFICATE:\n");
-		//ensure first cert is not null
-		if (pkcs7_cert)
-			rc = validateCertStruct(pkcs7_cert, NULL);
-		else
-			rc = CERT_FAIL;
-		if (rc) {
-			prlog(PR_ERR, "ERROR: failure to parse x509 signing certificate\n");
-			goto out;
-		}
+       do {
+               prlog(PR_INFO, "VALIDATING SIGNING CERTIFICATE:\n");
+               //ensure first cert is not null
+               if (pkcs7_cert)
+                       rc = validateCertStruct(pkcs7_cert, NULL);
+               else
+                       rc = CERT_FAIL;
+               if (rc) {
+                       prlog(PR_ERR, "ERROR: failure to parse x509 signing certificate\n");
+                       goto out;
+               }
 
-		cert_num++;
-		pkcs7_cert = crypto_pkcs7_get_signing_cert(pkcs7, cert_num);
-	} while (pkcs7_cert);
-	rc = SUCCESS;
+               cert_num++;
+               pkcs7_cert = crypto_pkcs7_get_signing_cert(pkcs7, cert_num);
+       } while (pkcs7_cert);
+       rc = SUCCESS;
 
 out:
-	if (pkcs7) {
-		crypto_pkcs7_free(pkcs7);
-	}
+       if (pkcs7) {
+               crypto_pkcs7_free(pkcs7);
+       }
 
-	return rc;
+       return rc;
 }
 
 /**
@@ -303,33 +303,33 @@ out:
  */
 int validateESL(const unsigned char *eslBuf, size_t buflen, const char *key)
 {
-	ssize_t eslvarsize = buflen;
-	size_t eslsize = 0;
-	int count = 0, offset = 0, rc;
-	prlog(PR_INFO, "VALIDATING ESL:\n");
-	while (eslvarsize > 0) {
-		rc = validateSingularESL(&eslsize, eslBuf + offset, eslvarsize, key);
-		// verify current esl to ensure it is a valid sigList, if 1 is returned break or error
-		if (rc) {
-			prlog(PR_ERR, "ERROR: Sig List #%d is not structured correctly\n", count);
-			// if there is one good esl just leave the loop
-			if (count)
-				break;
-			else
-				return rc;
-		}
+       ssize_t eslvarsize = buflen;
+       size_t eslsize = 0;
+       int count = 0, offset = 0, rc;
+       prlog(PR_INFO, "VALIDATING ESL:\n");
+       while (eslvarsize > 0) {
+               rc = validateSingularESL(&eslsize, eslBuf + offset, eslvarsize, key);
+               // verify current esl to ensure it is a valid sigList, if 1 is returned break or error
+               if (rc) {
+                       prlog(PR_ERR, "ERROR: Sig List #%d is not structured correctly\n", count);
+                       // if there is one good esl just leave the loop
+                       if (count)
+                               break;
+                       else
+                               return rc;
+               }
 
-		count++;
-		// we read all eslsize bytes so iterate to next esl
-		offset += eslsize;
-		// size left of total file
-		eslvarsize -= eslsize;
-	}
-	prlog(PR_INFO, "\tFound %d ESL's\n\n", count);
-	if (!count)
-		return ESL_FAIL;
+               count++;
+               // we read all eslsize bytes so iterate to next esl
+               offset += eslsize;
+               // size left of total file
+               eslvarsize -= eslsize;
+       }
+       prlog(PR_INFO, "\tFound %d ESL's\n\n", count);
+       if (!count)
+               return ESL_FAIL;
 
-	return SUCCESS;
+       return SUCCESS;
 }
 
 /*
@@ -342,50 +342,54 @@ int validateESL(const unsigned char *eslBuf, size_t buflen, const char *key)
  *@return SUCCESS if cetificate and header info is valid, errno otherwise
  */
 static int validateSingularESL(size_t *bytesRead, const unsigned char *esl, size_t eslvarsize,
-			       const char *varName)
+                              const char *varName)
 {
-	ssize_t cert_size;
-	int rc;
-	size_t eslsize;
-	unsigned char *cert = NULL;
-	EFI_SIGNATURE_LIST *sigList;
+       ssize_t cert_size;
+       int rc;
+       size_t eslsize;
+       unsigned char *cert = NULL;
+       EFI_SIGNATURE_LIST *sigList;
 
-	*bytesRead = 0;
-	// verify struct to ensure it is a valid sigList, if 1 is returned break
-	if (eslvarsize < sizeof(EFI_SIGNATURE_LIST)) {
-		prlog(PR_ERR,
-		      "ERROR: ESL has %zd bytes and is smaller than an ESL (%zd bytes), remaining data not parsed\n",
-		      eslvarsize, sizeof(EFI_SIGNATURE_LIST));
-		return ESL_FAIL;
-	}
-	// Get sig list
-	sigList = get_esl_signature_list((const char *)esl, eslvarsize);
-	// check size info is logical
-	if (sigList->SignatureListSize > 0) {
-		if ((sigList->SignatureSize <= 0 && sigList->SignatureHeaderSize <= 0) ||
-		    sigList->SignatureListSize <
-			    sigList->SignatureHeaderSize + sigList->SignatureSize) {
-			/*printf("Sig List : %d , sig Header: %d, sig Size: %d\n",list.SignatureListSize,list.SignatureHeaderSize,list.SignatureSize);*/
-			prlog(PR_ERR,
-			      "ERROR: Sig List is not structured correctly, defined size and actual sizes are mismatched\n");
-			return ESL_FAIL;
-		}
-	}
-	if (verbose >= PR_INFO)
-		printESLInfo(sigList);
-	if (sigList->SignatureListSize > eslvarsize || sigList->SignatureHeaderSize > eslvarsize ||
-	    sigList->SignatureSize > eslvarsize) {
+       *bytesRead = 0;
+       // verify struct to ensure it is a valid sigList, if 1 is returned break
+       if (eslvarsize < sizeof(EFI_SIGNATURE_LIST)) {
+               prlog(PR_ERR,
+                     "ERROR: ESL has %zd bytes and is smaller than an ESL (%zd bytes), remaining data not parsed\n",
+                     eslvarsize, sizeof(EFI_SIGNATURE_LIST));
+               return ESL_FAIL;
+       }
+       // Get sig list
+       sigList = get_esl_signature_list((const char *)esl, eslvarsize);
+       // check size info is logical
+      if (sigList->SignatureListSize > 0) {
+                if ((sigList->SignatureSize <= 0 &&
+                     sigList->SignatureHeaderSize <= 0) ||
+                    sigList->SignatureListSize <
+                            sigList->SignatureHeaderSize +
+                                    sigList->SignatureSize) {
+                        /*printf("Sig List : %d , sig Header: %d, sig Size: %d\n",list.SignatureListSize,list.SignatureHeaderSize,list.SignatureSize);*/
+                        prlog(PR_ERR,
+                              "ERROR: Sig List is not structured correctly, defined size and actual sizes are mismatched\n");
+                        return ESL_FAIL;
+                }
+        }
+
+	 if (verbose >= PR_INFO)
+               printESLInfo(sigList);
+	if (le32_to_cpu(sigList->SignatureListSize) > eslvarsize ||
+	    le32_to_cpu(sigList->SignatureHeaderSize) > eslvarsize ||
+	    le32_to_cpu(sigList->SignatureSize) > eslvarsize) {
 		prlog(PR_ERR,
 		      "ERROR: Expected Sig List Size %d + Header size %d + Signature Size is %d larger than actual size %zd\n",
-		      sigList->SignatureListSize, sigList->SignatureHeaderSize,
-		      sigList->SignatureSize, eslvarsize);
+		      le32_to_cpu(sigList->SignatureListSize), le32_to_cpu(sigList->SignatureHeaderSize),
+		      le32_to_cpu(sigList->SignatureSize), eslvarsize);
 		return ESL_FAIL;
-	} else if ((int)sigList->SignatureListSize <= 0) {
+	} else if ((int)le32_to_cpu(sigList->SignatureListSize) <= 0) {
 		prlog(PR_ERR, "ERROR: Sig List has incorrect size %d \n",
-		      sigList->SignatureListSize);
+		      le32_to_cpu(sigList->SignatureListSize));
 		return ESL_FAIL;
 	}
-	eslsize = sigList->SignatureListSize;
+	eslsize = le32_to_cpu(sigList->SignatureListSize);
 	// if eslsize is greater than remaining buffer size, error
 	if (eslsize > eslvarsize) {
 		prlog(PR_ERR,

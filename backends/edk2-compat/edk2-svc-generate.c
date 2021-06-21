@@ -779,8 +779,9 @@ static int authToESL(const unsigned char *in, size_t inSize, unsigned char **out
 	const struct efi_variable_authentication_2 *auth;
 
 	auth = (struct efi_variable_authentication_2 *)in;
-	length = auth->auth_info.hdr.dw_length;
-	if (length <= 0 || length > inSize) { // if total size of header and pkcs7
+	length = le32_to_cpu(auth->auth_info.hdr.dw_length);
+	if (length <= 0 
+		|| length > inSize) { // if total size of header and pkcs7
 		prlog(PR_ERR, "ERROR: Invalid auth size %zd\n", length);
 		return AUTH_FAIL;
 	}

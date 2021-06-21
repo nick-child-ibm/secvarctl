@@ -2,8 +2,9 @@
 # Copyright 2021 IBM Corp.
 #_*_MakeFile_*_
 CC = gcc 
-_CFLAGS = -MMD -O2 -std=gnu99 -I./ -Iinclude/ -Iexternal/skiboot/ \
-	  -Iexternal/skiboot/include -Wall -Werror
+
+_CFLAGS = -MMD -O0 -std=gnu99 -I./ -Iinclude/ -Iexternal/skiboot/ \
+	  -Iexternal/skiboot/include
 
 DEBUG ?= 0
 ifeq ($(DEBUG),1)
