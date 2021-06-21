@@ -8,7 +8,7 @@
 #include "err.h"
 #include "prlog.h"
 #include "generic.h"
-#include "libstb/secvar/crypto/crypto.h"
+#include "external/skiboot/libstb/secvar/crypto/crypto.h"
 #include "external/skiboot/libstb/secvar/backend/edk2.h"
 #include "external/skiboot/libstb/secvar/backend/edk2-compat-process.h"
 

@@ -3,8 +3,8 @@
 #_*_MakeFile_*_
 CC = gcc 
 
-_CFLAGS = -MMD -O0 -std=gnu99 -I./ -Iinclude/ -Iexternal/skiboot/ \
-	  -Iexternal/skiboot/include
+_CFLAGS = -MMD -O0 -std=gnu99 -I./ -Iinclude/ -I../skiboot/ \
+	  -I../skiboot/include
 
 DEBUG ?= 0
 ifeq ($(DEBUG),1)
@@ -17,9 +17,10 @@ EDK2OBJDIR = backends/edk2-compat
 _EDK2_OBJ =  edk2-svc-read.o edk2-svc-write.o edk2-svc-validate.o edk2-svc-verify.o edk2-svc-generate.o
 EDK2_OBJ = $(patsubst %,$(EDK2OBJDIR)/%, $(_EDK2_OBJ))
 
-SKIBOOTOBJDIR = external/skiboot/libstb/secvar
+SKIBOOTOBJDIR = ../skiboot/libstb/secvar/
 _SKIBOOT_OBJ = secvar_util.o backend/edk2-compat.o backend/edk2-compat-process.o
 SKIBOOT_OBJ = $(patsubst %,$(SKIBOOTOBJDIR)/%, $(_SKIBOOT_OBJ))
+#SKIBOOT_OBJ += ../skiboot/core/console-log.o ../skiboot/core/console.o
 
 OBJ =secvarctl.o  generic.o 
 OBJ +=$(SKIBOOT_OBJ) $(EDK2_OBJ) 
@@ -57,7 +58,7 @@ else
 	EXTRAMBEDTLS = $(patsubst %,$(EXTRAMBEDTLSDIR)/%, $(_EXTRAMBEDTLS))
 	OBJ += $(EXTRAMBEDTLS)
 
-	CRYPTO_OBJ = $(SKIBOOTOBJDIR)/crypto/crypto-mbedtls.o
+	CRYPTO_OBJ = external/skiboot/libstb/secvar/crypto/crypto-mbedtls.o
 
 endif
 

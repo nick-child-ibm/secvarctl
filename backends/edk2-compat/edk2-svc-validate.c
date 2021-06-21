@@ -4,7 +4,7 @@
 #include <string.h>
 #include <stdlib.h> // for exit
 #include <argp.h>
-#include "libstb/secvar/crypto/crypto.h"
+#include "external/skiboot/libstb/secvar/crypto/crypto.h"
 #include "include/edk2-svc.h"
 #include  <ccan/endian/endian.h>//for you know big end 
 

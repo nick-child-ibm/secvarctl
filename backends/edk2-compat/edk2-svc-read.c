@@ -9,7 +9,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <argp.h>
-#include "libstb/secvar/crypto/crypto.h"
+#include "external/skiboot/libstb/secvar/crypto/crypto.h"
 #include "external/skiboot/libstb/secvar/secvar.h" // for secvar struct
 #include "backends/edk2-compat/include/edk2-svc.h"
 #include <ccan/endian/endian.h> //for you know big end
