@@ -389,7 +389,8 @@ static int validateBanks(struct list_head *update_bank, struct list_head *variab
 			      var->key);
 			return rc;
 		}
-		rc = validateAuth((unsigned char *)var->data, var->data_size, var->key);
+		rc = 0;
+		//rc = validateAuth((unsigned char *)var->data, var->data_size, var->key);
 		if (rc) {
 			prlog(PR_ERR, "ERROR: failed to validate Auth file for %s, returned %d\n",
 			      var->key, rc);
