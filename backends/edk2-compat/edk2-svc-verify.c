@@ -551,7 +551,11 @@ static int commitUpdateBank(struct list_head *update_bank, const char *path)
 	int rc = INVALID_FILE;
 	struct secvar *var = NULL;
 	list_for_each (update_bank, var, link) {
-		prlog(PR_INFO, "Writing new %s with %zd bytes of data to %s%s/update\n", var->key,
+		printf("Thing 1: %s\n", var->key);
+		 printf("Thing 2: %llu\n", var->data_size);
+		 printf("Thing 3: %s\n", path);
+		 printf("Thing 4: %s\n", var->key);
+		prlog(PR_INFO, "Writing new %s with %llu bytes of data to %s%s/update\n", var->key,
 		      var->data_size, path, var->key);
 		rc = updateVar(path, var->key, (unsigned char *)var->data, var->data_size);
 		if (rc) {

@@ -8,10 +8,10 @@
 #include "crypto.h"
 #include "include/prlog.h"
 #include "include/err.h"
-
+#include <mbedtls/oid.h>
 #include <mbedtls/pk_internal.h> // for validating cert pk data
 #include <mbedtls/error.h>
-#include "external/extraMbedtls/include/pkcs7.h"
+#include "pkcs7.h"
 #include "external/extraMbedtls/include/generate-pkcs7.h"
 #include <mbedtls/platform.h>
 #include "generic.h"

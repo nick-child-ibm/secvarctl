@@ -3,7 +3,7 @@
 #_*_MakeFile_*_
 CC = gcc 
 
-_CFLAGS = -MMD -O0 -std=gnu99 -I./ -Iinclude/ -I../skiboot/ \
+_CFLAGS = -MMD -O0 -std=gnu99 -I ../skiboot/libstb/crypto/pkcs7 -I./ -Iinclude/ -I../skiboot/ \
 	  -I../skiboot/include
 
 DEBUG ?= 0
@@ -51,11 +51,12 @@ ifeq ($(OPENSSL),1)
 	CRYPTO_OBJ = $(SKIBOOTOBJDIR)/crypto/crypto-openssl.o
 else
 	_LDFLAGS += -lmbedtls -lmbedx509 -lmbedcrypto
-	_CFLAGS += -DMBEDTLS
+	_CFLAGS += -DMBEDTLS -DMBEDTLS_PKCS7_C
 
 	EXTRAMBEDTLSDIR = external/extraMbedtls
-	_EXTRAMBEDTLS = generate-pkcs7.o pkcs7.o 
+	_EXTRAMBEDTLS = generate-pkcs7.o 
 	EXTRAMBEDTLS = $(patsubst %,$(EXTRAMBEDTLSDIR)/%, $(_EXTRAMBEDTLS))
+	EXTRAMBEDTLS += ../skiboot/libstb/crypto/pkcs7/pkcs7.o
 	OBJ += $(EXTRAMBEDTLS)
 
 	CRYPTO_OBJ = external/skiboot/libstb/secvar/crypto/crypto-mbedtls.o

@@ -23,7 +23,7 @@ typedef EVP_MD_CTX crypto_md_ctx;
 #elif defined MBEDTLS
 
 #include <mbedtls/md.h>
-#include "external/extraMbedtls/include/pkcs7.h"
+#include "pkcs7.h"
 #define CRYPTO_MD_SHA1 MBEDTLS_MD_SHA1
 #define CRYPTO_MD_SHA224 MBEDTLS_MD_SHA224
 #define CRYPTO_MD_SHA256 MBEDTLS_MD_SHA256

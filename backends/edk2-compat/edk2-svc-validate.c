@@ -661,7 +661,7 @@ out:
  */
 int validateTime(struct efi_time *time)
 {
-	if (time->year < 1900 || time->year > 9999) {
+	if (le16_to_cpu(time->year) < 1900 || le16_to_cpu(time->year) > 9999) {
 		prlog(PR_ERR, "ERROR: Invalid Timestamp value for year: %d\n", time->year);
 		return INVALID_TIMESTAMP;
 	}
