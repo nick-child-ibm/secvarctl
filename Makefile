@@ -3,8 +3,7 @@
 #_*_MakeFile_*_
 CC = gcc 
 
-_CFLAGS = -MMD -O0 -std=gnu99 -I ../skiboot/libstb/crypto/pkcs7 -I./ -Iinclude/ -I../skiboot/ \
-	  -I../skiboot/include
+_CFLAGS = -MMD -O0 -std=gnu99 -I../skiboot/libstb/crypto/pkcs7 -I./ -Iinclude/ -I../skiboot/ -I../skiboot/include -L../skiboot/libstb/crypto/mbedtls/library -I../skiboot/libstb/crypto/mbedtls/include
 
 DEBUG ?= 0
 ifeq ($(DEBUG),1)
