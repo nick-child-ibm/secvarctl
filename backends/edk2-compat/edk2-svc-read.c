@@ -618,6 +618,7 @@ struct command edk2_compat_command_table[] = {
 	{ .name = "verify", .func = performVerificationCommand },
 #ifndef NO_CRYPTO
 	{ .name = "insert", .func = performInsertCommand },
+	{ .name = "remove", .func = performRemoveCommand },
 	{ .name = "generate", .func = performGenerateCommand }
 #endif
 };
