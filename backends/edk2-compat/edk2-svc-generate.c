@@ -1038,7 +1038,7 @@ static int toPKCS7ForSecVar(const unsigned char *newData, size_t dataSize, struc
 		rc = crypto_pkcs7_generate_w_signature((unsigned char **)outBuff, outBuffSize,
 						       actualData, totalSize, args->signCerts,
 						       args->signKeys, args->signKeyCount,
-						       CRYPTO_MD_SHA256);
+						       CRYPTO_MD_SHA512);
 	if (rc) {
 		prlog(PR_ERR, "ERROR: making PKCS7 failed\n");
 		rc = PKCS7_FAIL;
