@@ -1,0 +1,1 @@
+ make CFLAGS="-L../skiboot/libstb/crypto/mbedtls/library -I../skiboot/libstb/crypto/mbedtls/include" DEBUG=1
