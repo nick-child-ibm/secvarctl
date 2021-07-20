@@ -6,7 +6,7 @@ import os
 import filecmp
 import sys
 MEM_ERR = 101
-SECTOOLS="../secvarctl-cov"
+SECTOOLS="../secvarctl"
 SECVARPATH="/sys/firmware/secvar/vars/"
 goodAuths=[]
 badAuths=[]

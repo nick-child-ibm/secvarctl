@@ -10,7 +10,7 @@ import unittest
 import filecmp
 
 MEM_ERR = 101
-SECTOOLS="../secvarctl-cov"
+SECTOOLS="../secvarctl"
 GEN = [SECTOOLS, "generate", "-v"]
 OUTDIR = "./generatedTestData/"
 

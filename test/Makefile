@@ -22,7 +22,7 @@ else
 	OPENSSL_TESTS =
 endif
 
-all: $(data) ../secvarctl-cov
+all: $(data) ../secvarctl
 	$(py) runTests.py $(MEMARGS)
 	$(py) runSvcGenerateTests.py $(MEMARGS) $(OPENSSL_TESTS)
 
@@ -31,8 +31,8 @@ all: $(data) ../secvarctl-cov
 generate: $(data)
 	$(py) generateTestData.py $(efitools)
 
-../secvarctl-cov:
-	make -C ../ secvarctl-cov
+../secvarctl:
+	echo "GO build secvarctl first fool"
 
 clean:
 	rm -f -r ./*.txt generatedTestData testenv/*
