@@ -1,0 +1,7 @@
+This is a version of secvarctl that does 2 things differently.
+
+Mainly it uses functions in an actual skiboot tree. It uses the mbedtls in the skiboot tree and the secvar functions. The locatation of the source tree is expected to be ../skiboot/ . 
+
+The second difference is this branch has been partially edited to run in big endian. All files except for the generate funtions have been edited to work correctly in big endian, (so i don't know if they work still in little endian). So generate tests will fail if running on big endian. That is ok since:
+
+This branch of secvarctl is for testing skiboot patches only. The whole point is the secvarctl `verify` tests will actually be testing skiboot files. This hardens skiboot secvar patches much faster than normal skiboot image flashing ways.
