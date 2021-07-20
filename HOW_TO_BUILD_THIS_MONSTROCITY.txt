@@ -1,1 +1,3 @@
- make CFLAGS="-L../skiboot/libstb/crypto/mbedtls/library -I../skiboot/libstb/crypto/mbedtls/include" DEBUG=1
+make CFLAGS="-L../skiboot/libstb/crypto/mbedtls/library -I../skiboot/libstb/crypto/mbedtls/include" DEBUG=1
+	BE SURE MBEDTLS IS BUILT
+make clean && pushd libstb/crypto/mbedtls/ && make -j 30 ||  popd
